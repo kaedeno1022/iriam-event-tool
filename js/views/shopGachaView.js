@@ -16,7 +16,7 @@ import {
 } from './dialogs.js';
 
 const MODE_LABEL = {
-  random: '抽選', guaranteed: '確定', free: '無料', select: '選択(旧)',
+  random: '抽選', guaranteed: '確定', free: '無料',
 };
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
