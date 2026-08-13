@@ -291,6 +291,6 @@ describe('renderShiraPai - segmentId指定(日付ベースの非既定インス�
       state, save: vi.fn(), rerender: vi.fn(), container, segmentId: 'seg-extra',
     });
 
-    expect(container.textContent).toContain('土曜の罰ゲーム');
+    expect(container.querySelector('.segment-name-header').value).toBe('土曜の罰ゲーム');
   });
 });

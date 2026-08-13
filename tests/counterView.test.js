@@ -382,7 +382,7 @@ describe('renderCounter - segmentId指定(日付ベースの非既定インス�
       state, save: vi.fn(), rerender: vi.fn(), container, segmentId: 'seg-extra',
     });
 
-    expect(container.textContent).toContain('入室カウンター');
+    expect(container.querySelector('.segment-name-header').value).toBe('入室カウンター');
     expect(container.querySelector('input[type="number"]').value).toBe('3');
   });
 
@@ -398,8 +398,8 @@ describe('renderCounter - segmentId指定(日付ベースの非既定インス�
       state, save: vi.fn(), rerender: vi.fn(), container,
     });
 
-    expect(container.textContent).toContain('カウンター');
-    expect(container.textContent).not.toContain('入室カウンター');
+    expect(container.querySelector('.segment-name-header').value).toContain('カウンター');
+    expect(container.querySelector('.segment-name-header').value).not.toBe('入室カウンター');
   });
 
   it('該当segmentが無ければ「見つかりません」を表示する', () => {

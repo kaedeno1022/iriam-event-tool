@@ -6,7 +6,7 @@ import {
 } from './dialogs.js';
 
 const TYPE_LABELS = {
-  panelOpen: 'パネル明け',
+  panelOpen: 'パネル開け',
   shiraPai: '罰ゲーム',
   shopGacha: '買い物 or ガチャ枠',
   categoryEndurance: 'カテゴリ耐久',
@@ -75,6 +75,19 @@ function segmentCard({
     },
   });
 
+  const renameBtn = el('button', {
+    type: 'button',
+    class: 'btn-icon',
+    title: '企画名を変更',
+    onclick: async () => {
+      const name = await showPrompt('企画名を入力', segment.name);
+      if (!name || !name.trim()) return;
+      segment.name = name.trim();
+      save();
+      rerender();
+    },
+  }, '✎');
+
   const deleteBtn = el('button', {
     type: 'button',
     class: 'btn-icon',
@@ -89,7 +102,7 @@ function segmentCard({
 
   return el('div', { class: 'segment-card' }, [
     link,
-    el('div', { class: 'form-row inline' }, [el('label', {}, '日付'), dateInput, deleteBtn]),
+    el('div', { class: 'form-row inline' }, [el('label', {}, '日付'), dateInput, renameBtn, deleteBtn]),
   ]);
 }
 

@@ -97,7 +97,7 @@ describe('renderDashboard', () => {
 
   it('segment.dateが一致する企画はその日のカレンダーセルにカードとして表示され、#/segment/<id>にリンクする', () => {
     state.segments.push({
-      id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', date: '2026-08-19', config: { imageUrl: '', conditions: [] },
+      id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', date: '2026-08-19', config: { imageUrl: '', conditions: [] },
     });
     rerender();
 
@@ -106,7 +106,38 @@ describe('renderDashboard', () => {
     const link = day19.querySelector('a.segment-card-link');
     expect(link).toBeTruthy();
     expect(link.getAttribute('href')).toBe('#/segment/seg1');
-    expect(link.textContent).toContain('パネル明け');
+    expect(link.textContent).toContain('パネル開け');
+  });
+
+  it('カードの✎ボタンで企画名をリネームできる', async () => {
+    state.segments.push({
+      id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', date: '2026-08-19', config: { imageUrl: '', conditions: [] },
+    });
+    rerender();
+
+    showPrompt.mockResolvedValueOnce('改名後のパネル開け');
+    const dayCells = [...container.querySelectorAll('.calendar-day')];
+    const day19 = dayCells.find((c) => c.textContent.includes('2026-08-19'));
+    clickByText(day19, 'button', '✎');
+    await flush();
+
+    expect(state.segments[0].name).toBe('改名後のパネル開け');
+    expect(showPrompt).toHaveBeenCalledWith('企画名を入力', 'パネル開け');
+  });
+
+  it('企画名リネームで空欄を入力(またはキャンセル)しても名前は変わらない', async () => {
+    state.segments.push({
+      id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', date: '2026-08-19', config: { imageUrl: '', conditions: [] },
+    });
+    rerender();
+
+    showPrompt.mockResolvedValueOnce(null);
+    const dayCells = [...container.querySelectorAll('.calendar-day')];
+    const day19 = dayCells.find((c) => c.textContent.includes('2026-08-19'));
+    clickByText(day19, 'button', '✎');
+    await flush();
+
+    expect(state.segments[0].name).toBe('パネル開け');
   });
 
   it('date:nullの企画はカレンダーのどのセルにも表示されない(「未スケジュール」欄は廃止済み)', () => {

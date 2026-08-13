@@ -139,6 +139,24 @@ textarea {
   resize: vertical;
 }
 
+.segment-name-header {
+  display: block;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 1.5em;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.segment-name-header:hover, .segment-name-header:focus {
+  border-color: var(--color-border);
+  background: var(--color-surface);
+}
+
 button {
   font-family: inherit;
   cursor: pointer;

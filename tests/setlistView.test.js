@@ -65,7 +65,7 @@ describe('renderSetlist', () => {
 
     expect(state.segments[0].config.songs).toHaveLength(1);
     expect(state.segments[0].config.songs[0]).toMatchObject({ title: '曲A', done: false });
-    expect(container.querySelector('input[type="text"]').value).toBe('曲A'); // 曲名はinputのvalueとして描画される(textContentには現れない)
+    expect(container.querySelector('.song-title-input').value).toBe('曲A'); // 曲名はinputのvalueとして描画される(textContentには現れない)
   });
 
   it('曲名入力をキャンセルすると追加されない', async () => {
@@ -92,7 +92,7 @@ describe('renderSetlist', () => {
     state.segments[0].config.songs.push({ id: 's1', title: '曲A', done: false });
     rerender();
 
-    const titleInput = container.querySelector('input[type="text"]');
+    const titleInput = container.querySelector('.song-title-input');
     titleInput.value = '曲A(改題)';
     titleInput.dispatchEvent(new Event('input'));
 
@@ -163,6 +163,6 @@ describe('renderSetlist - segmentId指定(日付ベースの非既定インス�
       state, save: vi.fn(), rerender: vi.fn(), container, segmentId: 'seg-extra',
     });
 
-    expect(container.querySelector('h2').textContent).toBe('2部のセトリ');
+    expect(container.querySelector('.segment-name-header').value).toBe('2部のセトリ');
   });
 });

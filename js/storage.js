@@ -1,6 +1,6 @@
 import { genId } from './id.js';
 
-// v2: パネル明けのitem形状を{targetValue}から{conditions:[]}に変更(破壊的変更のためキーを分離し、
+// v2: パネル開けのitem形状を{targetValue}から{conditions:[]}に変更(破壊的変更のためキーを分離し、
 // 旧形式のデータを読み込んで進捗計算関数(当時のcomputeItemProgress、v5でcomputeSegmentProgressに改名)
 // がクラッシュしないようにする)
 // v3: Segmentにdate(日付紐づけ、未設定はnull)・stateにactiveEventId(複数イベント管理)を追加。
@@ -91,8 +91,8 @@ const SEGMENT_TYPE_DEFS = [
   {
     key: 'panelOpen',
     type: 'panelOpen',
-    name: 'パネル明け',
-    oldNames: [],
+    name: 'パネル開け',
+    oldNames: ['パネル明け'],
     buildConfig: () => ({ imageUrl: '', conditions: [] }),
   },
   {
@@ -194,6 +194,36 @@ function migratePanelOpenItems(state) {
   state.segments.push(...toAdd);
 }
 
+// v7より前のガチャ景品はweight(相対値)を持っていたが、確率表示化に伴いprobability(%、
+// 全景品合計100)へ移行した。weightのみでprobabilityを持たない景品だけを変換対象にし、
+// 既にprobabilityを持つ景品(値)には触れない。変換対象には、既存probability景品が
+// 既に確保している分を除いた残り予算を、重み比に応じてclampしながら配分する
+// (clampはredistributeProbabilityと同じ理由: しないと丸め誤差で負値になりうる)。
+function migrateGachaWeightToProbability(prizes) {
+  if (!prizes || prizes.length === 0) return;
+  const toMigrate = prizes.filter((p) => p.probability === undefined && p.weight !== undefined);
+  if (toMigrate.length === 0) return;
+  const alreadyAllocated = prizes.reduce(
+    (sum, p) => sum + (p.probability !== undefined ? (Number(p.probability) || 0) : 0),
+    0,
+  );
+  const remaining = Math.max(0, 100 - alreadyAllocated);
+  const weights = toMigrate.map((p) => Math.max(0, Number(p.weight) || 0));
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  let allocated = 0;
+  toMigrate.forEach((p, i) => {
+    delete p.weight;
+    if (i === toMigrate.length - 1) {
+      p.probability = remaining - allocated;
+      return;
+    }
+    const share = total > 0 ? weights[i] / total : 1 / toMigrate.length;
+    const raw = Math.min(Math.max(Math.round(share * remaining), 0), remaining - allocated);
+    p.probability = raw;
+    allocated += raw;
+  });
+}
+
 // v4より前に作られたmaidCorner/role segmentのtypeを'shopGacha'にリネームし、
 // 対応するkeyを補完する。それ以外の型は旧typeがそのままkeyになる。
 const LEGACY_KEY_BY_TYPE = { panelOpen: 'panelOpen', shiraPai: 'shiraPai' };
@@ -231,6 +261,7 @@ function migrateLegacySegments(state) {
       // 既存の抽選履歴(gachaLog)自体は監査ログとして残すため削除しない。
       delete seg.config.gacha.drawMode;
       delete seg.config.gachaTicketPurchases;
+      migrateGachaWeightToProbability(seg.config.gacha.prizes);
     }
 
     if (seg.type === 'categoryEndurance' && seg.config) {

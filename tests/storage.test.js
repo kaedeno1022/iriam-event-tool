@@ -33,7 +33,7 @@ describe('migrateSegments', () => {
   it('既定企画の概念は廃止したため、shiraPai等の企画が無い旧データに対しても新規作成しない', () => {
     const state = {
       events: [{ id: 'event1', name: 'テストイベント' }],
-      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, config: { imageUrl: '', conditions: [] } }],
+      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, config: { imageUrl: '', conditions: [] } }],
     };
     migrateSegments(state);
 
@@ -52,7 +52,7 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1' }],
       segments: [
-        { id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', order: 0, config: { imageUrl: '', conditions: [] } },
+        { id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', order: 0, config: { imageUrl: '', conditions: [] } },
         { id: 'seg2', eventId: 'event1', type: 'shiraPai', key: 'shiraPai', name: '罰ゲームチャレンジ', order: 1, config: { punishments: [{ id: 'p1', name: '既存罰ゲーム', count: 5 }], history: [] } },
         {
           id: 'seg3', eventId: 'event1', type: 'shopGacha', key: 'maidCorner', name: 'メイド枠', order: 2, config: { shopItems: [{ id: 'i1', name: '既存特典' }], shopLog: [], gacha: { prizes: [] }, gachaLog: [], freeDrawGrants: [] },
@@ -184,6 +184,18 @@ describe('migrateSegments', () => {
     expect(state.segments.find((s) => s.key === 'counter').name).toBe('カウンター');
   });
 
+  it('旧デフォルト名(パネル明け)のままのsegmentは新しいデフォルト名(パネル開け)に追従する', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', order: 0, config: { imageUrl: '', conditions: [] },
+      }],
+    };
+    migrateSegments(state);
+
+    expect(state.segments.find((s) => s.key === 'panelOpen').name).toBe('パネル開け');
+  });
+
   it('1 segmentに複数パネル(items配列)を持つ旧panelOpen segmentは、1件目が元segmentを引き継ぎ2件目以降は新規segmentに分割される', () => {
     const state = {
       events: [{ id: 'event1' }],
@@ -191,7 +203,7 @@ describe('migrateSegments', () => {
         id: 'seg1',
         eventId: 'event1',
         type: 'panelOpen',
-        name: 'パネル明け',
+        name: 'パネル開け',
         order: 0,
         config: {
           items: [
@@ -229,7 +241,7 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1' }],
       segments: [{
-        id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, config: { items: [] },
+        id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, config: { items: [] },
       }],
     };
     migrateSegments(state);
@@ -342,6 +354,79 @@ describe('migrateSegments', () => {
     expect(gacha.rateTiers).toEqual([]);
   });
 
+  it('旧weight形式のガチャ景品は重み比から算出したprobability(%、合計100)に変換され、weightは削除される', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg4',
+        eventId: 'event1',
+        type: 'shopGacha',
+        key: 'role',
+        name: '役職',
+        order: 0,
+        config: {
+          gacha: {
+            prizes: [
+              { id: 'p1', name: 'A', weight: 1 },
+              { id: 'p2', name: 'B', weight: 3 },
+            ],
+          },
+        },
+      }],
+    };
+    migrateSegments(state);
+
+    const { prizes } = state.segments.find((s) => s.key === 'role').config.gacha;
+    expect(prizes[0]).toMatchObject({ id: 'p1', probability: 25 });
+    expect(prizes[1]).toMatchObject({ id: 'p2', probability: 75 });
+    expect(prizes[0].weight).toBeUndefined();
+    expect(prizes[1].weight).toBeUndefined();
+  });
+
+  it('既にprobabilityを持つガチャ景品はマイグレーション対象外(値を書き換えない)', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg4', eventId: 'event1', type: 'shopGacha', key: 'role', name: '役職', order: 0, config: { gacha: { prizes: [{ id: 'p1', probability: 40 }] } },
+      }],
+    };
+    migrateSegments(state);
+
+    expect(state.segments.find((s) => s.key === 'role').config.gacha.prizes[0].probability).toBe(40);
+  });
+
+  it('probability済みの景品とweightのみの景品が混在していても、既存probabilityは上書きせず残り予算のみをweight比で配分する', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg4',
+        eventId: 'event1',
+        type: 'shopGacha',
+        key: 'role',
+        name: '役職',
+        order: 0,
+        config: {
+          gacha: {
+            prizes: [
+              { id: 'p1', name: '既存', probability: 40 },
+              { id: 'p2', name: '旧A', weight: 1 },
+              { id: 'p3', name: '旧B', weight: 1 },
+            ],
+          },
+        },
+      }],
+    };
+    migrateSegments(state);
+
+    const { prizes } = state.segments.find((s) => s.key === 'role').config.gacha;
+    expect(prizes[0].probability).toBe(40); // 既存値は書き換えられない
+    expect(prizes[1].probability).toBe(30); // 残り60%をweight比(1:1)で均等配分
+    expect(prizes[2].probability).toBe(30);
+    expect(prizes[1].weight).toBeUndefined();
+    expect(prizes[2].weight).toBeUndefined();
+    expect(prizes.reduce((sum, p) => sum + p.probability, 0)).toBe(100);
+  });
+
   it('既存categoryEndurance segmentに欠けているフィールド(category/giftCounts)があれば補完する', () => {
     const state = {
       events: [{ id: 'event1' }],
@@ -366,8 +451,8 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1' }],
       segments: [
-        { id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, config: { items: [] } },
-        { id: 'seg-other', eventId: 'event-other', type: 'panelOpen', name: '別イベントのパネル明け', order: 0, config: { items: [] } },
+        { id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, config: { items: [] } },
+        { id: 'seg-other', eventId: 'event-other', type: 'panelOpen', name: '別イベントのパネル開け', order: 0, config: { items: [] } },
       ],
     };
     migrateSegments(state);
@@ -380,7 +465,7 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1' }],
       segments: [
-        { id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, date: '2026-08-18', config: { items: [] } },
+        { id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, date: '2026-08-18', config: { items: [] } },
       ],
     };
     migrateSegments(state);
@@ -391,14 +476,14 @@ describe('migrateSegments', () => {
   it('存在しない旧デフォルト枠(shiraPai等)は、periodStartの有無に関わらず新規作成されない', () => {
     const withoutPeriod = {
       events: [{ id: 'event1' }],
-      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, config: { items: [] } }],
+      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, config: { items: [] } }],
     };
     migrateSegments(withoutPeriod);
     expect(withoutPeriod.segments.some((s) => s.type === 'shiraPai')).toBe(false);
 
     const withPeriod = {
       events: [{ id: 'event1', periodStart: '2026-08-18', periodEnd: '2026-08-20' }],
-      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, config: { items: [] } }],
+      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, config: { items: [] } }],
     };
     migrateSegments(withPeriod);
     expect(withPeriod.segments.some((s) => s.type === 'shiraPai')).toBe(false);
@@ -408,7 +493,7 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1', periodStart: '2026-08-18', periodEnd: '2026-08-20' }],
       segments: [{
-        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', order: 0, date: null, config: { imageUrl: '', conditions: [] },
+        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', order: 0, date: null, config: { imageUrl: '', conditions: [] },
       }],
     };
     migrateSegments(state);
@@ -420,7 +505,7 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1', periodStart: '2026-08-18', periodEnd: '2026-08-20' }],
       segments: [{
-        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', order: 0, date: '2026-08-19', config: { imageUrl: '', conditions: [] },
+        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', order: 0, date: '2026-08-19', config: { imageUrl: '', conditions: [] },
       }],
     };
     migrateSegments(state);
@@ -431,7 +516,7 @@ describe('migrateSegments', () => {
   it('activeEventIdが未設定なら渡されたeventIdで補完する', () => {
     const state = {
       events: [{ id: 'event1' }],
-      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, config: { items: [] } }],
+      segments: [{ id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, config: { items: [] } }],
     };
     migrateSegments(state);
 
@@ -456,8 +541,8 @@ describe('migrateSegments', () => {
         { id: 'event2', periodStart: '2026-09-01', periodEnd: '2026-09-03' },
       ],
       segments: [
-        { id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', order: 0, date: null, config: { imageUrl: '', conditions: [] } },
-        { id: 'seg2', eventId: 'event2', type: 'panelOpen', key: 'panelOpen', name: 'パネル明け', order: 0, date: null, config: { imageUrl: '', conditions: [] } },
+        { id: 'seg1', eventId: 'event1', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', order: 0, date: null, config: { imageUrl: '', conditions: [] } },
+        { id: 'seg2', eventId: 'event2', type: 'panelOpen', key: 'panelOpen', name: 'パネル開け', order: 0, date: null, config: { imageUrl: '', conditions: [] } },
       ],
     };
     migrateSegments(state, 'event2');
@@ -589,10 +674,10 @@ describe('initState', () => {
       activeEventId: 'event1',
       segments: [
         {
-          id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル明け', order: 0, date: null, config: { items: [] },
+          id: 'seg1', eventId: 'event1', type: 'panelOpen', name: 'パネル開け', order: 0, date: null, config: { items: [] },
         },
         {
-          id: 'seg2', eventId: 'event2', type: 'panelOpen', name: 'パネル明け', order: 0, date: null, config: { items: [] },
+          id: 'seg2', eventId: 'event2', type: 'panelOpen', name: 'パネル開け', order: 0, date: null, config: { items: [] },
         },
       ],
       giftMaster: [],

@@ -59,7 +59,7 @@ export function openConditionModal({ state, save, item, onSaved }) {
       ];
     } else if (kind === 'manualCounter') {
       extraFields = [
-        el('p', { class: 'empty-hint' }, 'ギフト記録とは連動しません。パネル明け画面の＋/－ボタンで手動でカウントし、目標に達すると自動で達成扱いになります。'),
+        el('p', { class: 'empty-hint' }, 'ギフト記録とは連動しません。パネル開け画面の＋/－ボタンで手動でカウントし、目標に達すると自動で達成扱いになります。'),
         el('div', { class: 'form-row' }, [
           el('label', {}, '目標値'),
           el('input', { type: 'number', min: '1', id: 'cond-target', value: '1' }),

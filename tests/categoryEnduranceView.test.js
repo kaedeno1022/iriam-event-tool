@@ -73,7 +73,7 @@ describe('renderCategoryEndurance', () => {
   });
 
   it('見出しとカードが表示される(既定カテゴリはLOVE)', () => {
-    expect(findByText(container, 'h2', 'カテゴリ耐久')).toBeTruthy();
+    expect(container.querySelector('.segment-name-header').value).toBe('カテゴリ耐久');
     expect(findByText(container, 'h3', 'LOVEギフト記録')).toBeTruthy();
   });
 
@@ -300,7 +300,7 @@ describe('renderCategoryEndurance - segmentId指定(日付ベースの非既定�
       state, save: vi.fn(), rerender: () => {}, container, segmentId: 'seg-extra',
     });
 
-    expect(container.querySelector('h2').textContent).toBe('2周目の耐久');
+    expect(container.querySelector('.segment-name-header').value).toBe('2周目の耐久');
     expect(container.querySelector('select').value).toBe('定番');
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  remainingStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws,
+  remainingStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws, redistributeProbability,
 } from '../js/gacha.js';
 
 describe('remainingStock', () => {
@@ -72,30 +72,64 @@ describe('weightedRandomPick', () => {
   });
 
   it('候補が1件ならそれを返す', () => {
-    const prizes = [{ id: 'only', weight: 1 }];
+    const prizes = [{ id: 'only', probability: 100 }];
     expect(weightedRandomPick(prizes)).toBe(prizes[0]);
   });
 
-  it('重みに応じて選ばれる(累積境界の確認)', () => {
+  it('確率に応じて選ばれる(累積境界の確認)', () => {
     const prizes = [
-      { id: 'p1', weight: 1 }, // 累積0-1
-      { id: 'p2', weight: 3 }, // 累積1-4
+      { id: 'p1', probability: 25 }, // 累積0-25
+      { id: 'p2', probability: 75 }, // 累積25-100
     ];
     const randomSpy = vi.spyOn(Math, 'random');
 
-    randomSpy.mockReturnValue(0); // total=4, r=0 -> p1
+    randomSpy.mockReturnValue(0); // total=100, r=0 -> p1
     expect(weightedRandomPick(prizes).id).toBe('p1');
 
-    randomSpy.mockReturnValue(0.999); // r=3.996 -> p2
+    randomSpy.mockReturnValue(0.999); // r=99.9 -> p2
     expect(weightedRandomPick(prizes).id).toBe('p2');
 
     randomSpy.mockRestore();
   });
 
-  it('重みが全て0以下なら均等抽選にフォールバックする', () => {
-    const prizes = [{ id: 'p1', weight: 0 }, { id: 'p2', weight: 0 }];
+  it('確率が全て0以下なら均等抽選にフォールバックする', () => {
+    const prizes = [{ id: 'p1', probability: 0 }, { id: 'p2', probability: 0 }];
     const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.99);
     expect(weightedRandomPick(prizes).id).toBe('p2'); // Math.floor(0.99*2)=1
     randomSpy.mockRestore();
+  });
+});
+
+describe('redistributeProbability', () => {
+  it('対象が空なら何もしない', () => {
+    expect(() => redistributeProbability([], 100)).not.toThrow();
+  });
+
+  it('比率を保ったままtargetSumに再配分する', () => {
+    const prizes = [{ id: 'p1', probability: 60 }, { id: 'p2', probability: 40 }];
+    redistributeProbability(prizes, 80);
+    expect(prizes[0].probability).toBe(48); // 60/100*80
+    expect(prizes[1].probability).toBe(32); // targetSumとの差分(端数調整は最後の要素)
+    expect(prizes[0].probability + prizes[1].probability).toBe(80);
+  });
+
+  it('現在の合計が0(新規景品のみ等)なら均等配分する', () => {
+    const prizes = [{ id: 'p1', probability: 0 }, { id: 'p2', probability: 0 }, { id: 'p3', probability: 0 }];
+    redistributeProbability(prizes, 100);
+    expect(prizes.reduce((sum, p) => sum + p.probability, 0)).toBe(100);
+  });
+
+  it('丸め誤差は最後の要素に寄せ、合計が必ずtargetSumと一致する', () => {
+    const prizes = [{ id: 'p1', probability: 33 }, { id: 'p2', probability: 33 }, { id: 'p3', probability: 34 }];
+    redistributeProbability(prizes, 70);
+    expect(prizes.reduce((sum, p) => sum + p.probability, 0)).toBe(70);
+  });
+
+  it('非最終要素の丸めが超過配分しても、最後の要素が負値にならない(clampで配分済み分に制限)', () => {
+    // 50/50/0のような比率をtargetSum=1に圧縮すると、素朴な丸めでは[1,1,-1]になりうる。
+    const prizes = [{ id: 'p1', probability: 50 }, { id: 'p2', probability: 50 }, { id: 'p3', probability: 0 }];
+    redistributeProbability(prizes, 1);
+    expect(prizes.every((p) => p.probability >= 0)).toBe(true);
+    expect(prizes.reduce((sum, p) => sum + p.probability, 0)).toBe(1);
   });
 });

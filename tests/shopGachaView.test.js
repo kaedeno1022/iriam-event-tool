@@ -3,7 +3,9 @@ import {
   describe, it, expect, vi, beforeEach,
 } from 'vitest';
 import { renderShopGacha, resetShopGachaUiState } from '../js/views/shopGachaView.js';
-import { showAlert, showConfirm, showPrompt } from '../js/views/dialogs.js';
+import {
+  showAlert, showConfirm, showPrompt, showSelect,
+} from '../js/views/dialogs.js';
 
 vi.mock('../js/views/dialogs.js', () => ({
   showAlert: vi.fn(),
@@ -99,7 +101,7 @@ describe('renderShopGacha', () => {
   });
 
   it('segment.nameを見出しに表示する', () => {
-    expect(container.querySelector('h2').textContent).toBe('メイド枠');
+    expect(container.querySelector('.segment-name-header').value).toBe('メイド枠');
   });
 
   it('既定でポイントタブが選択されている', () => {
@@ -163,12 +165,53 @@ describe('renderShopGacha', () => {
       selectUser(container, 'u1');
       expect(container.textContent).toContain('交換可能な特典がありません');
     });
+
+    describe('特典の追加・編集(モーダル)', () => {
+      function setModalInput(selector, value) {
+        const input = document.querySelector(selector);
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+      }
+
+      function clickModalButton(text) {
+        const btn = [...document.querySelectorAll('.modal-box button')].find((b) => b.textContent === text);
+        if (!btn) throw new Error(`modal button not found: ${text}`);
+        btn.click();
+      }
+
+      it('＋ 特典を追加を押すとモーダルが開き、入力値通りの特典が追加される', async () => {
+        await clickByText(container, 'button', '▼ 特典一覧を編集');
+        clickByText(container, 'button', '＋ 特典を追加');
+
+        setModalInput('#stockitem-name', '新特典');
+        setModalInput('#stockitem-points', '150');
+        clickModalButton('追加する');
+
+        const added = state.segments[0].config.shopItems.find((i) => i.name === '新特典');
+        expect(added).toMatchObject({ requiredPoints: 150, stock: null, allowDuplicate: false });
+      });
+
+      it('✎を押すとモーダルが開き、既存値が初期表示され、保存すると同じオブジェクトが更新される', async () => {
+        await clickByText(container, 'button', '▼ 特典一覧を編集');
+        const row = [...container.querySelectorAll('.punishment-row')].find((r) => r.textContent.includes('オムライスらくがき'));
+        row.querySelector('button[title="編集"]').click();
+
+        expect(document.querySelector('#stockitem-name').value).toBe('オムライスらくがき');
+        expect(document.querySelector('#stockitem-points').value).toBe('200');
+
+        setModalInput('#stockitem-points', '300');
+        clickModalButton('保存する');
+
+        const item = state.segments[0].config.shopItems.find((i) => i.id === 'item1');
+        expect(item.requiredPoints).toBe(300);
+      });
+    });
   });
 
   describe('ガチャタブ', () => {
     beforeEach(async () => {
       state.segments[0].config.gacha.prizes.push({
-        id: 'prize1', name: 'ヘッダー', weight: 1, stock: null, allowDuplicate: true, guaranteedPoints: null,
+        id: 'prize1', name: 'ヘッダー', probability: 100, stock: null, allowDuplicate: true, guaranteedPoints: null,
       });
       state.segments[0].config.gacha.rateTiers.push({ id: 'tier1', points: 300, draws: 1 });
       await clickByText(container, 'button', 'ガチャ');
@@ -270,64 +313,154 @@ describe('renderShopGacha', () => {
       expect(container.textContent).toContain('無料');
     });
 
-    describe('＋ 景品を追加(4連続prompt+confirmのawaitチェーン)', () => {
+    describe('＋ 景品を追加(モーダル)', () => {
       beforeEach(async () => {
         await clickByText(container, 'button', '▼ 景品一覧を編集');
       });
 
-      it('4つの入力を全て終えると、入力値通りの景品が追加される', async () => {
-        showPrompt.mockResolvedValueOnce('新景品').mockResolvedValueOnce('3').mockResolvedValueOnce('10').mockResolvedValueOnce('');
-        showConfirm.mockResolvedValueOnce(true);
+      function setModalInput(selector, value) {
+        const input = document.querySelector(selector);
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+      }
 
-        await clickByText(container, 'button', '＋ 景品を追加');
+      function clickModalButton(text) {
+        const btn = [...document.querySelectorAll('.modal-box button')].find((b) => b.textContent === text);
+        if (!btn) throw new Error(`modal button not found: ${text}`);
+        btn.click();
+      }
+
+      it('＋ 景品を追加を押すとモーダルが開き、入力値通りの景品が追加され既存景品の確率は比例縮小される', () => {
+        clickByText(container, 'button', '＋ 景品を追加');
+
+        setModalInput('#prize-name', '新景品');
+        setModalInput('#prize-probability', '30');
+        setModalInput('#prize-stock', '10');
+        document.querySelector('#prize-allow-duplicate').click();
+        clickModalButton('追加する');
 
         expect(state.segments[0].config.gacha.prizes).toHaveLength(2); // 既存のprize1 + 新規
         const added = state.segments[0].config.gacha.prizes.find((p) => p.name === '新景品');
         expect(added).toMatchObject({
-          name: '新景品', weight: 3, stock: 10, allowDuplicate: true, guaranteedPoints: null,
+          name: '新景品', probability: 30, stock: 10, allowDuplicate: true, guaranteedPoints: null,
         });
+        const prize1 = state.segments[0].config.gacha.prizes.find((p) => p.id === 'prize1');
+        expect(prize1.probability).toBe(70); // 100% -> 新規30%分を圧縮されて70%
       });
 
-      it('景品名の入力をキャンセルすると、以降のダイアログは呼ばれず何も追加されない', async () => {
-        showPrompt.mockResolvedValueOnce(null);
-
-        await clickByText(container, 'button', '＋ 景品を追加');
+      it('モーダルをキャンセルすると何も追加されない', () => {
+        clickByText(container, 'button', '＋ 景品を追加');
+        setModalInput('#prize-name', '新景品');
+        clickModalButton('キャンセル');
 
         expect(state.segments[0].config.gacha.prizes).toHaveLength(1); // 既存のprize1のみ
-        expect(showPrompt).toHaveBeenCalledTimes(1); // 重み以降のpromptは呼ばれていない
-        expect(showConfirm).not.toHaveBeenCalled();
+        expect(document.querySelector('.modal-box')).toBeNull();
       });
 
-      it('重み・在庫の入力をキャンセルしても既定値(重み1・在庫無制限)で追加は続行される', async () => {
-        showPrompt.mockResolvedValueOnce('新景品').mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce(null);
-        showConfirm.mockResolvedValueOnce(false);
+      it('景品一覧に確率(%)が重みではなく%表記で表示される', () => {
+        expect(container.textContent).toContain('ヘッダー(100%)');
+      });
 
-        await clickByText(container, 'button', '＋ 景品を追加');
+      it('景品を削除すると、redistributeProbabilityにより残りの景品の確率が100%に再配分される', async () => {
+        clickByText(container, 'button', '＋ 景品を追加');
+        setModalInput('#prize-name', '景品2');
+        setModalInput('#prize-probability', '30');
+        clickModalButton('追加する');
+        expect(state.segments[0].config.gacha.prizes.find((p) => p.id === 'prize1').probability).toBe(70);
 
-        const added = state.segments[0].config.gacha.prizes.find((p) => p.name === '新景品');
-        expect(added).toMatchObject({
-          weight: 1, stock: null, allowDuplicate: false, guaranteedPoints: null,
+        const rows = [...container.querySelectorAll('.punishment-row')];
+        const targetRow = rows.find((r) => r.textContent.includes('景品2'));
+        showConfirm.mockResolvedValueOnce(true);
+        targetRow.querySelector('button[title="削除"]').click();
+        await flush();
+
+        expect(state.segments[0].config.gacha.prizes).toHaveLength(1);
+        expect(state.segments[0].config.gacha.prizes[0]).toMatchObject({ id: 'prize1', probability: 100 });
+      });
+    });
+
+    describe('＋ お買い物からコピー', () => {
+      it('特典を選ぶとモーダルが開き、名前・在庫・被り可否が初期値として反映される', async () => {
+        state.segments[0].config.shopItems.push({
+          id: 'item1', name: 'コピー元特典', requiredPoints: 200, stock: 5, allowDuplicate: true,
+        });
+        rerender();
+        await clickByText(container, 'button', 'ガチャ');
+        await clickByText(container, 'button', '▼ 景品一覧を編集');
+        showSelect.mockResolvedValueOnce('item1');
+        await clickByText(container, 'button', '＋ お買い物からコピー');
+
+        expect(document.querySelector('#prize-name').value).toBe('コピー元特典');
+        expect(document.querySelector('#prize-stock').value).toBe('5');
+        expect(document.querySelector('#prize-allow-duplicate').checked).toBe(true);
+      });
+    });
+
+    describe('✎ 景品を編集(モーダル)', () => {
+      beforeEach(async () => {
+        await clickByText(container, 'button', '▼ 景品一覧を編集');
+      });
+
+      function setModalInput(selector, value) {
+        const input = document.querySelector(selector);
+        input.value = value;
+        input.dispatchEvent(new Event('input'));
+      }
+
+      function clickModalButton(text) {
+        const btn = [...document.querySelectorAll('.modal-box button')].find((b) => b.textContent === text);
+        if (!btn) throw new Error(`modal button not found: ${text}`);
+        btn.click();
+      }
+
+      function editPrizeByName(name) {
+        const rows = [...container.querySelectorAll('.punishment-row')];
+        const targetRow = rows.find((r) => r.textContent.includes(name));
+        targetRow.querySelector('button[title="編集"]').click();
+      }
+
+      it('✎を押すとモーダルが開き、既存値が初期表示され、保存すると同じオブジェクトが更新される', () => {
+        editPrizeByName('ヘッダー');
+
+        expect(document.querySelector('#prize-name').value).toBe('ヘッダー');
+        expect(document.querySelector('#prize-probability').disabled).toBe(true); // 他に景品が無いため
+
+        setModalInput('#prize-name', 'ヘッダー(改)');
+        setModalInput('#prize-stock', '20');
+        setModalInput('#prize-guaranteed', '500');
+        clickModalButton('保存する');
+
+        const prize = state.segments[0].config.gacha.prizes.find((p) => p.id === 'prize1');
+        expect(prize).toMatchObject({
+          name: 'ヘッダー(改)', probability: 100, stock: 20, allowDuplicate: true, guaranteedPoints: 500,
         });
       });
 
-      it('確定枠に不正な値(0以下)を入力するとアラートを出し追加しない', async () => {
-        showPrompt.mockResolvedValueOnce('新景品').mockResolvedValueOnce('1').mockResolvedValueOnce('').mockResolvedValueOnce('0');
-        showConfirm.mockResolvedValueOnce(true);
+      it('景品が2件以上ある場合、確率編集は現在値が初期表示され、他の景品の確率が自動で再配分される', () => {
+        clickByText(container, 'button', '＋ 景品を追加');
+        setModalInput('#prize-name', '景品2');
+        setModalInput('#prize-probability', '30');
+        clickModalButton('追加する');
+        expect(state.segments[0].config.gacha.prizes.find((p) => p.id === 'prize1').probability).toBe(70);
 
-        await clickByText(container, 'button', '＋ 景品を追加');
+        editPrizeByName('ヘッダー');
+        expect(document.querySelector('#prize-probability').disabled).toBe(false);
+        expect(document.querySelector('#prize-probability').value).toBe('70');
+        setModalInput('#prize-probability', '50');
+        clickModalButton('保存する');
 
-        expect(state.segments[0].config.gacha.prizes.find((p) => p.name === '新景品')).toBeUndefined();
-        expect(showAlert).toHaveBeenCalledWith('確定枠の必要ptは正の数値で入力してください');
+        const prizes = state.segments[0].config.gacha.prizes;
+        expect(prizes.find((p) => p.id === 'prize1').probability).toBe(50);
+        expect(prizes.find((p) => p.name === '景品2').probability).toBe(50);
       });
 
-      it('確定枠に正の数値を入力すると、guaranteedPointsが設定される', async () => {
-        showPrompt.mockResolvedValueOnce('新景品').mockResolvedValueOnce('1').mockResolvedValueOnce('').mockResolvedValueOnce('1000');
-        showConfirm.mockResolvedValueOnce(true);
+      it('モーダルをキャンセルすると変更されない', () => {
+        editPrizeByName('ヘッダー');
+        setModalInput('#prize-name', 'ヘッダー(改)');
+        clickModalButton('キャンセル');
 
-        await clickByText(container, 'button', '＋ 景品を追加');
-
-        const added = state.segments[0].config.gacha.prizes.find((p) => p.name === '新景品');
-        expect(added.guaranteedPoints).toBe(1000);
+        const prize = state.segments[0].config.gacha.prizes.find((p) => p.id === 'prize1');
+        expect(prize.name).toBe('ヘッダー');
       });
     });
 
@@ -432,7 +565,7 @@ describe('renderShopGacha - segmentId指定(日付ベースの非既定インス
       state: s, save: vi.fn(), rerender: () => {}, container, segmentId: 'seg-extra',
     });
 
-    expect(container.querySelector('h2').textContent).toBe('土曜の物販ガチャ');
+    expect(container.querySelector('.segment-name-header').value).toBe('土曜の物販ガチャ');
   });
 
   it('key:nullを共有する2つの非既定インスタンス(異なるsegmentId)でもUI状態(選択中ユーザー)が独立している', () => {

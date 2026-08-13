@@ -5,6 +5,7 @@ import { openGiftRecordModal } from './giftRecordModal.js';
 import { createGiftPicker } from './giftPicker.js';
 import { collapsibleSection } from './economyHelpers.js';
 import { showAlert, showConfirm, showPrompt } from './dialogs.js';
+import { segmentNameHeader } from './segmentHeader.js';
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key==='shiraPai')を表示する。
@@ -254,7 +255,7 @@ export function renderShiraPai({
   ]);
 
   container.append(el('section', {}, [
-    el('h2', {}, segment.name),
+    segmentNameHeader(segment, save),
     el('div', { class: 'card' }, [
       el('h3', {}, 'ギフト記録'),
       el('p', { class: 'empty-hint' }, 'ここに記録したギフトはユーザーの合計ポイントに反映されます。'),

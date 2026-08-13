@@ -1,19 +1,22 @@
 import { el, formatDateTime } from '../render.js';
 import { genId } from '../id.js';
 import {
-  remainingStock as remainingPrizeStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws,
+  remainingStock as remainingPrizeStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws, redistributeProbability,
 } from '../gacha.js';
 import { usersWithActivity } from '../points.js';
 import { getActiveEventId } from '../storage.js';
 import { createUserSelect } from './userSelect.js';
 import { openGiftRecordModal } from './giftRecordModal.js';
 import {
-  userName, stockLabel, promptNewStockItem, promptEditStockItem, remainingShopStock, eligibleShopItems,
+  userName, stockLabel, remainingShopStock, eligibleShopItems,
   filterByUser, historyTitle, pointsBalance, freeDrawBalance, balanceText, collapsibleSection,
 } from './economyHelpers.js';
 import {
   showAlert, showConfirm, showPrompt, showSelect,
 } from './dialogs.js';
+import { segmentNameHeader } from './segmentHeader.js';
+import { openStockItemModal } from './stockItemModal.js';
+import { openPrizeModal } from './prizeModal.js';
 
 const MODE_LABEL = {
   random: '抽選', guaranteed: '確定', free: '無料',
@@ -182,16 +185,9 @@ function renderShopSection({
         type: 'button',
         class: 'btn-icon',
         title: '編集',
-        onclick: async () => {
-          const result = await promptEditStockItem('特典', item);
-          if (!result) return;
-          item.name = result.name;
-          item.requiredPoints = result.requiredPoints;
-          item.stock = result.stock;
-          item.allowDuplicate = result.allowDuplicate;
-          save();
-          rerender();
-        },
+        onclick: () => openStockItemModal({
+          items, item, kind: '特典', save, onSaved: rerender,
+        }),
       }, '✎'),
       el('button', {
         type: 'button',
@@ -209,15 +205,9 @@ function renderShopSection({
   const addItemBtn = el('button', {
     type: 'button',
     class: 'btn-secondary',
-    onclick: async () => {
-      const result = await promptNewStockItem('特典');
-      if (!result) return;
-      items.push({
-        id: genId('shopitem'), name: result.name, requiredPoints: result.requiredPoints, stock: result.stock, allowDuplicate: result.allowDuplicate,
-      });
-      save();
-      rerender();
-    },
+    onclick: () => openStockItemModal({
+      items, item: null, kind: '特典', save, onSaved: rerender,
+    }),
   }, '＋ 特典を追加');
 
   const logRows = filterByUser(log, userId).slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 20).map((entry) => el('tr', {}, [
@@ -390,7 +380,15 @@ function renderGachaSection({
   const prizeRows = gacha.prizes.map((prize) => {
     const stock = remainingPrizeStock(prize, log);
     return el('div', { class: 'card punishment-row' }, [
-      el('span', { class: 'punishment-name' }, `${prize.name}(重み${prize.weight}) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
+      el('span', { class: 'punishment-name' }, `${prize.name}(${prize.probability}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
+      el('button', {
+        type: 'button',
+        class: 'btn-icon',
+        title: '編集',
+        onclick: () => openPrizeModal({
+          prizes: gacha.prizes, prize, save, onSaved: rerender,
+        }),
+      }, '✎'),
       el('button', {
         type: 'button',
         class: 'btn-icon',
@@ -398,42 +396,25 @@ function renderGachaSection({
         onclick: async () => {
           if (!(await showConfirm(`「${prize.name}」を削除しますか？`))) return;
           gacha.prizes = gacha.prizes.filter((x) => x.id !== prize.id);
+          redistributeProbability(gacha.prizes, 100);
           save();
           rerender();
         },
       }, '🗑'),
     ]);
   });
+
   const addPrizeBtn = el('button', {
     type: 'button',
     class: 'btn-secondary',
-    onclick: async () => {
-      const name = await showPrompt('景品名を入力');
-      if (!name || !name.trim()) return;
-      const weightStr = await showPrompt('重み(抽選の出やすさ)を入力', '1');
-      const weight = Number(weightStr) || 1;
-      const stockStr = await showPrompt('在庫数を入力(無制限なら空欄)');
-      const stock = stockStr && stockStr.trim() !== '' ? Number(stockStr) : null;
-      const allowDuplicate = await showConfirm('同じユーザーの被り(複数回当選)を許可しますか？\nOK=許可 / キャンセル=不可');
-      const guaranteedStr = await showPrompt('確定枠の必要ptを入力(抽選を挟まず直接選べるようにする場合のみ。不要なら空欄)');
-      let guaranteedPoints = null;
-      if (guaranteedStr && guaranteedStr.trim() !== '') {
-        guaranteedPoints = Number(guaranteedStr);
-        if (!Number.isFinite(guaranteedPoints) || guaranteedPoints <= 0) {
-          await showAlert('確定枠の必要ptは正の数値で入力してください');
-          return;
-        }
-      }
-      gacha.prizes.push({
-        id: genId('prize'), name: name.trim(), weight, stock, allowDuplicate, guaranteedPoints,
-      });
-      save();
-      rerender();
-    },
+    onclick: () => openPrizeModal({
+      prizes: gacha.prizes, prize: null, save, onSaved: rerender,
+    }),
   }, '＋ 景品を追加');
 
-  // お買い物の特典一覧から名前・在庫・被り可否をコピーして景品を新規作成する。特典側にはweight/
-  // guaranteedPointsが無いため、weightは既定の1、guaranteedPoints(確定枠)はなしで作成する。
+  // お買い物の特典一覧から名前・在庫・被り可否をコピーした状態でモーダルを開く。特典側には
+  // 確率/guaranteedPointsが無いため、確率はモーダル内で追加時と同様に入力してもらい、
+  // guaranteedPoints(確定枠)はなし(空欄)から始める。
   const copyFromShopBtn = el('button', {
     type: 'button',
     class: 'btn-secondary',
@@ -447,11 +428,13 @@ function renderGachaSection({
       if (!itemId) return;
       const source = shopItems.find((item) => item.id === itemId);
       if (!source) return;
-      gacha.prizes.push({
-        id: genId('prize'), name: source.name, weight: 1, stock: source.stock, allowDuplicate: source.allowDuplicate, guaranteedPoints: null,
+      openPrizeModal({
+        prizes: gacha.prizes,
+        prize: null,
+        initialValues: { name: source.name, stock: source.stock, allowDuplicate: source.allowDuplicate },
+        save,
+        onSaved: rerender,
       });
-      save();
-      rerender();
     },
   }, '＋ お買い物からコピー');
 
@@ -647,7 +630,7 @@ export function renderShopGacha({
   else sectionContent = renderPointsSection(sectionArgs);
 
   container.append(el('section', {}, [
-    el('h2', {}, segment.name),
+    segmentNameHeader(segment, save),
     el('div', { class: 'card' }, [
       el('h3', {}, '対象ユーザー'),
       el('p', { class: 'empty-hint' }, '選択したユーザーで、下のどのタブでも操作できます。'),

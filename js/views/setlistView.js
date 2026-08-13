@@ -2,6 +2,7 @@ import { el } from '../render.js';
 import { genId } from '../id.js';
 import { getActiveEventId } from '../storage.js';
 import { showConfirm, showPrompt } from './dialogs.js';
+import { segmentNameHeader } from './segmentHeader.js';
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key==='setlist')を表示する。
@@ -39,6 +40,7 @@ export function renderSetlist({
     ]),
     el('input', {
       type: 'text',
+      class: 'song-title-input',
       value: song.title,
       oninput: (e) => { song.title = e.target.value; save(); },
     }),
@@ -74,7 +76,7 @@ export function renderSetlist({
   }, '＋ 曲を追加');
 
   container.append(el('section', {}, [
-    el('h2', {}, segment.name),
+    segmentNameHeader(segment, save),
     el('div', { class: 'card' }, [
       el('p', { class: 'empty-hint' }, '曲名を登録し、↑↓で歌う順に並び替えます。歌い終えたら「済み」にチェックしてください。'),
       el('p', {}, `済み ${doneCount} / 全${songs.length}曲`),

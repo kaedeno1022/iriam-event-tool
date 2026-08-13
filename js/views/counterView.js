@@ -3,6 +3,7 @@ import { getActiveEventId } from '../storage.js';
 import { openGiftRecordModal } from './giftRecordModal.js';
 import { openCounterRuleModal } from './counterRuleModal.js';
 import { showAlert, showConfirm, showPrompt } from './dialogs.js';
+import { segmentNameHeader } from './segmentHeader.js';
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key==='counter')を表示する。
@@ -193,7 +194,7 @@ export function renderCounter({
   ]);
 
   container.append(el('section', {}, [
-    el('h2', {}, segment.name),
+    segmentNameHeader(segment, save),
     el('div', { class: 'card' }, [
       el('p', { class: 'empty-hint' }, '＋／－で1ずつ増減、または数値を直接入力してください。'),
       el('div', { class: 'form-row inline' }, [minusBtn, countInput, plusBtn]),

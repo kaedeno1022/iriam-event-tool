@@ -5,6 +5,7 @@ import { getActiveEventId } from '../storage.js';
 import { openGiftRecordModal } from './giftRecordModal.js';
 import { collapsibleSection } from './economyHelpers.js';
 import { showConfirm, showPrompt } from './dialogs.js';
+import { segmentNameHeader } from './segmentHeader.js';
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key==='categoryEndurance')を表示する。
@@ -186,7 +187,7 @@ export function renderCategoryEndurance({
   });
 
   container.append(el('section', {}, [
-    el('h2', {}, segment.name),
+    segmentNameHeader(segment, save),
     el('div', { class: 'card' }, [
       el('div', { class: 'form-row' }, [el('label', {}, '対象カテゴリ'), categorySelect]),
       collapsibleSection({

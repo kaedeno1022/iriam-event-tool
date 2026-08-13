@@ -4,6 +4,7 @@ import { openGiftRecordModal } from './giftRecordModal.js';
 import { openConditionModal } from './conditionModal.js';
 import { openNoteModal } from './noteModal.js';
 import { showAlert, showConfirm, showPrompt } from './dialogs.js';
+import { segmentNameHeader } from './segmentHeader.js';
 
 // 条件(condition)は「このパネル(1枚の画像)を開放するために満たすべき項目」。
 // 1 segmentインスタンス = 1パネルという設計のため、達成判定はsegment単位でまとめて行う。
@@ -174,7 +175,7 @@ export function renderPanelOpen({
 }) {
   const segment = findPanelSegment(state, segmentId);
   if (!segment) {
-    container.append(el('p', {}, 'パネル明け企画が見つかりません。'));
+    container.append(el('p', {}, 'パネル開け企画が見つかりません。'));
     return;
   }
   segment.config.conditions = segment.config.conditions ?? [];
@@ -265,7 +266,7 @@ export function renderPanelOpen({
   ]);
 
   container.append(el('section', { class: 'view-panel-open' }, [
-    el('h2', {}, segment.name),
+    segmentNameHeader(segment, save),
     panelCard,
     el('h3', {}, '直近の記録'),
     logTable,

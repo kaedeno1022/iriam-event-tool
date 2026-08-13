@@ -18,7 +18,7 @@ function buildState() {
       eventId: 'event1',
       type: 'panelOpen',
       key: 'panelOpen',
-      name: 'パネル明け',
+      name: 'パネル開け',
       config: {
         imageUrl: '',
         conditions: [

@@ -1,6 +1,5 @@
 import { el } from '../render.js';
 import { computeEarnedPoints, computeSpentPoints } from '../points.js';
-import { showPrompt, showConfirm } from './dialogs.js';
 
 // 買い物orガチャ枠(旧メイド枠・役職)など、「ギフト記録でpt獲得→お買い物形式特典/ガチャでpt消費」
 // という共通の経済モデルを持つ企画セグメントで使い回す表示ヘルパー群。
@@ -12,35 +11,6 @@ export function userName(state, userId) {
 
 export function stockLabel(stock) {
   return stock === null ? '無制限' : `残り${stock}`;
-}
-
-export async function promptNewStockItem(kind) {
-  const name = await showPrompt(`${kind}名を入力`);
-  if (!name || !name.trim()) return null;
-  const pointsStr = await showPrompt('必要ポイントを入力(不明なら空欄)');
-  const requiredPoints = pointsStr && pointsStr.trim() !== '' ? Number(pointsStr) : null;
-  const stockStr = await showPrompt('在庫数を入力(無制限なら空欄)');
-  const stock = stockStr && stockStr.trim() !== '' ? Number(stockStr) : null;
-  const allowDuplicate = await showConfirm('同じユーザーの被り(複数回獲得)を許可しますか？\nOK=許可 / キャンセル=不可');
-  return {
-    name: name.trim(), requiredPoints, stock, allowDuplicate,
-  };
-}
-
-// promptNewStockItemと同じ入力列を、既存itemの値を初期値にして聞き直す。idは呼び出し側が
-// そのまま使い回す前提(在庫計算・被り判定はitem.idで過去ログを参照するため、編集時もidは
-// 変えない)。
-export async function promptEditStockItem(kind, item) {
-  const name = await showPrompt(`${kind}名を入力`, item.name);
-  if (!name || !name.trim()) return null;
-  const pointsStr = await showPrompt('必要ポイントを入力(不明なら空欄)', item.requiredPoints != null ? String(item.requiredPoints) : '');
-  const requiredPoints = pointsStr && pointsStr.trim() !== '' ? Number(pointsStr) : null;
-  const stockStr = await showPrompt('在庫数を入力(無制限なら空欄)', item.stock != null ? String(item.stock) : '');
-  const stock = stockStr && stockStr.trim() !== '' ? Number(stockStr) : null;
-  const allowDuplicate = await showConfirm('同じユーザーの被り(複数回獲得)を許可しますか？\nOK=許可 / キャンセル=不可');
-  return {
-    name: name.trim(), requiredPoints, stock, allowDuplicate,
-  };
 }
 
 export function remainingShopStock(item, log) {
