@@ -1,0 +1,13 @@
+{
+  "name": "iriam-event-tool",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1",
+    "vitest": "^2.1.0"
+  }
+}

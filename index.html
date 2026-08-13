@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>IRIAMイベント管理ツール</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>IRIAMイベント管理ツール</h1>
+  <div class="event-switcher">
+    <select id="event-select"></select>
+    <button id="new-event-btn" class="btn-secondary" type="button">＋ 新規イベント</button>
+  </div>
+  <div class="header-actions">
+    <button id="export-btn" class="btn-secondary" type="button">エクスポート</button>
+    <label class="btn-secondary file-label">
+      インポート
+      <input id="import-input" type="file" accept="application/json" hidden>
+    </label>
+  </div>
+</header>
+
+<nav class="tab-nav">
+  <a class="tab-link" data-route="dashboard" href="#/dashboard">ダッシュボード</a>
+  <a class="tab-link" data-route="users" href="#/users">ユーザー</a>
+  <a class="tab-link" data-route="gifts" href="#/gifts">ギフトマスタ</a>
+</nav>
+
+<main id="app"></main>
+
+<div id="modal-root"></div>
+<div id="dialog-root"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
