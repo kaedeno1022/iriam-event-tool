@@ -8,7 +8,7 @@ import { renderShiraPai } from './views/shiraPaiView.js';
 import { renderShopGacha } from './views/shopGachaView.js';
 import { renderCategoryEndurance } from './views/categoryEnduranceView.js';
 import { renderSetlist } from './views/setlistView.js';
-import { renderViewerCounter } from './views/viewerCounterView.js';
+import { renderCounter } from './views/counterView.js';
 import { renderUsers } from './views/userView.js';
 import { renderGiftMaster } from './views/giftMasterView.js';
 import { el } from './render.js';
@@ -28,7 +28,7 @@ const VIEW_BY_TYPE = {
   shopGacha: renderShopGacha,
   categoryEndurance: renderCategoryEndurance,
   setlist: renderSetlist,
-  viewerCounter: renderViewerCounter,
+  counter: renderCounter,
 };
 
 function renderSegmentById(ctx, segmentId) {

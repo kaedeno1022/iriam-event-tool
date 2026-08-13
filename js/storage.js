@@ -19,8 +19,15 @@ import { genId } from './id.js';
 // 「＋企画を割り当て」で必要な企画だけを都度追加する運用に統一した(ダッシュボードから
 // 企画を削除・日付変更できるようにするための前提変更)。既存データに残る旧デフォルト枠
 // (key有り)は削除せず、名前・日付の後方互換パッチだけ引き続き適用する。
+// v6(2026-08-13、schemaVersion更新): viewerCounter(同接専用)をcounter(汎用カウンター)に
+// 一般化。type/keyをリネームし、ギフト記録と連動して自動増減する「ルール」(rules[])を
+// 追加した(config: { count, rules: [{ id, giftId, delta }] })。記録はルール固定の専用UIでは
+// なく共通の「ギフトを記録」欄(対象ギフト固定なし)から行い、記録したgiftIdに一致するルールが
+// あれば自動でcountに反映する(conditionIdは特定ルールに紐づけず常にnull)。記録時に適用した
+// delta(1個あたり)はログ自体に記憶し、個数編集・取り消し時はその記憶値で補正する
+// (ルールを事後に変更・削除しても過去の記録の補正結果は変わらない)。
 const STORAGE_KEY = 'iriamEventTool:state:v2';
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 function emptyState() {
   return {
@@ -135,12 +142,13 @@ const SEGMENT_TYPE_DEFS = [
     buildConfig: () => ({ songs: [] }),
   },
   {
-    // 同接(同時接続数)のプラスマイナスカウンター。他の企画から独立した単純な数値のみ持つ。
-    key: 'viewerCounter',
-    type: 'viewerCounter',
-    name: '同接カウンター',
-    oldNames: [],
-    buildConfig: () => ({ count: 0 }),
+    // プラスマイナスカウンター(同接カウンターの汎用化)。手動±操作は他企画から独立するが、
+    // ルール(rules)を登録すると特定ギフトの記録に応じてcountを自動増減できる。
+    key: 'counter',
+    type: 'counter',
+    name: 'カウンター',
+    oldNames: ['同接カウンター'],
+    buildConfig: () => ({ count: 0, rules: [] }),
   },
 ];
 
@@ -201,6 +209,9 @@ function migrateLegacySegments(state) {
     } else if (seg.type === 'loveCate') {
       seg.key = seg.key ?? 'categoryEndurance';
       seg.type = 'categoryEndurance';
+    } else if (seg.type === 'viewerCounter') {
+      seg.key = seg.key === 'viewerCounter' ? 'counter' : seg.key;
+      seg.type = 'counter';
     } else if (seg.key === undefined) {
       // 既に移行済み、または日付ベースでユーザーが追加した非既定segmentはnullのまま
       seg.key = LEGACY_KEY_BY_TYPE[seg.type] ?? null;
@@ -230,6 +241,11 @@ function migrateLegacySegments(state) {
 
     if (seg.type === 'setlist' && seg.config) {
       seg.config.songs = seg.config.songs ?? [];
+    }
+
+    if (seg.type === 'counter' && seg.config) {
+      seg.config.count = seg.config.count ?? 0;
+      seg.config.rules = seg.config.rules ?? [];
     }
   }
 }

@@ -45,7 +45,7 @@ describe('migrateSegments', () => {
     expect(state.segments.some((s) => s.key === 'categoryEndurance')).toBe(false);
     expect(state.segments.some((s) => s.key === 'digiVoiceGacha')).toBe(false);
     expect(state.segments.some((s) => s.key === 'setlist')).toBe(false);
-    expect(state.segments.some((s) => s.key === 'viewerCounter')).toBe(false);
+    expect(state.segments.some((s) => s.key === 'counter')).toBe(false);
   });
 
   it('既に旧デフォルト枠(shiraPai/メイド枠/役職/カテゴリ耐久)があれば中身は変更せず、無いものは新規作成しない', () => {
@@ -140,6 +140,48 @@ describe('migrateSegments', () => {
     migrateSegments(state);
 
     expect(state.segments.find((s) => s.key === 'categoryEndurance').name).toBe('カテゴリ耐久');
+  });
+
+  it('旧type=viewerCounterのsegmentはtype=counter・key=counterにリネームされ、rules:[]が補完される(count保持)', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg6', eventId: 'event1', type: 'viewerCounter', key: 'viewerCounter', name: '同接カウンター', order: 0, config: { count: 42 },
+      }],
+    };
+    migrateSegments(state);
+
+    const counter = state.segments.find((s) => s.key === 'counter');
+    expect(counter.id).toBe('seg6');
+    expect(counter.type).toBe('counter');
+    expect(counter.config.count).toBe(42);
+    expect(counter.config.rules).toEqual([]);
+  });
+
+  it('日付ベースで追加された非既定のviewerCounter(key:null)はkey:nullのままcounterにリネームされる', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg7', eventId: 'event1', type: 'viewerCounter', key: null, name: '入室カウンター', order: 0, config: { count: 0 },
+      }],
+    };
+    migrateSegments(state);
+
+    const counter = state.segments.find((s) => s.id === 'seg7');
+    expect(counter.key).toBeNull();
+    expect(counter.type).toBe('counter');
+  });
+
+  it('旧デフォルト名(同接カウンター)のままのsegmentは新しいデフォルト名(カウンター)に追従する', () => {
+    const state = {
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg6', eventId: 'event1', type: 'viewerCounter', key: 'viewerCounter', name: '同接カウンター', order: 0, config: { count: 0 },
+      }],
+    };
+    migrateSegments(state);
+
+    expect(state.segments.find((s) => s.key === 'counter').name).toBe('カウンター');
   });
 
   it('1 segmentに複数パネル(items配列)を持つ旧panelOpen segmentは、1件目が元segmentを引き継ぎ2件目以降は新規segmentに分割される', () => {

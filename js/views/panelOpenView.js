@@ -113,7 +113,7 @@ function renderConditionRow({
       value: String(condition.current),
       class: 'viewer-counter-input',
       // 入力中に毎回rerenderすると、複数桁を打つ途中でフォーカスが外れてしまう
-      // (viewerCounterView.jsの直接入力欄と同じ理由でoninputはrerenderしない)。
+      // (counterView.jsの直接入力欄と同じ理由でoninputはrerenderしない)。
       // 達成バッジ/progressの反映はonchange(blur時)に一本化する。このinputは<form>で
       // 囲んでいないためEnter単体ではblurせずchangeが発火しないので、onkeydownでは
       // rerender()を直接呼ばずblur()するだけに留める(focus中の要素をrerenderでDOMごと

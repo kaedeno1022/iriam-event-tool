@@ -11,7 +11,7 @@ const TYPE_LABELS = {
   shopGacha: '買い物 or ガチャ枠',
   categoryEndurance: 'カテゴリ耐久',
   setlist: 'ラスラン',
-  viewerCounter: '同接カウンター',
+  counter: 'カウンター',
 };
 // この6種はcreateSegmentInstance()で新規作成できる(いずれもSEGMENT_TYPE_DEFSにbuildConfigがある)。
 const CREATABLE_TYPES = Object.keys(TYPE_LABELS);
@@ -44,8 +44,8 @@ function segmentSummary(state, segment) {
     const doneCount = songs.filter((s) => s.done).length;
     return `済み ${doneCount} / 全${songs.length}曲`;
   }
-  if (segment.type === 'viewerCounter') {
-    return `同接 ${segment.config.count ?? 0}`;
+  if (segment.type === 'counter') {
+    return `カウント ${segment.config.count ?? 0}`;
   }
   return '(未対応の企画タイプ)';
 }
