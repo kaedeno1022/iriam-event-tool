@@ -3,7 +3,9 @@ import { genId } from '../id.js';
 import { getActiveEventId } from '../storage.js';
 import { showConfirm } from './dialogs.js';
 
-export function renderUsers({ state, save, rerender, container }) {
+export function renderUsers({
+  state, save, saveText = save, rerender, container,
+}) {
   const activeEventId = getActiveEventId(state);
   const activeSegmentIds = new Set(state.segments.filter((s) => s.eventId === activeEventId).map((s) => s.id));
   let newName = '';
@@ -52,7 +54,7 @@ export function renderUsers({ state, save, rerender, container }) {
       el('div', { class: 'user-card-header' }, [
         el('input', {
           type: 'text', value: user.displayName,
-          oninput: (e) => { user.displayName = e.target.value; save(); },
+          oninput: (e) => { user.displayName = e.target.value; saveText(); },
         }),
         el('button', {
           type: 'button',
@@ -60,7 +62,7 @@ export function renderUsers({ state, save, rerender, container }) {
           title: '削除',
           onclick: async () => {
             if (!(await showConfirm(`「${user.displayName}」を削除しますか？(記録済みギフト履歴は残ります)`))) return;
-            state.users = state.users.filter((u) => u.id !== user.id);
+            state.users = state.users.filter((u) => u !== user);
             save();
             rerender();
           },
@@ -69,7 +71,7 @@ export function renderUsers({ state, save, rerender, container }) {
       el('p', { class: 'user-total-points' }, `合計ポイント: ${totalPoints}pt`),
       el('textarea', {
         placeholder: 'メモ',
-        oninput: (e) => { user.memo = e.target.value; save(); },
+        oninput: (e) => { user.memo = e.target.value; saveText(); },
       }, user.memo || ''),
       el('div', { class: 'user-history' }, [
         el('strong', {}, `ギフト履歴(種類別合計、計${logs.length}件)`),

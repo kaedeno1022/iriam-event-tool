@@ -1,9 +1,27 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  describe, it, expect, vi, beforeEach, afterEach,
+} from 'vitest';
 import {
   isValidStateShape, migrateSegments, getActiveEventId, getActiveEvent, setActiveEvent, createEvent,
   createSegmentInstance, initState, saveState,
+  STORAGE_KEY, StateLoadError, setSaveErrorHandler, backupCurrentState, readBackupRaw,
+  clearStoredState, clearBackupState, importStateFromFile, countExternalImageUrls, scheduleSave, flushScheduledSave, hasBackup,
+  canToggleUserTracking, isUserTrackingEnabled,
 } from '../js/storage.js';
+
+// 追加したテスト群で使う最小のstate。必須配列だけを持つ形。
+function emptyStateForTest() {
+  return {
+    schemaVersion: 6,
+    events: [],
+    segments: [],
+    giftMaster: [],
+    giftLogs: [],
+    users: [],
+    activeEventId: null,
+  };
+}
 
 describe('isValidStateShape', () => {
   it('必須配列が全て揃っていればtrue', () => {
@@ -694,5 +712,404 @@ describe('initState', () => {
       // 旧データのkey未設定は後方互換補完で'panelOpen'になる(既定企画の新規作成とは別ロジック)
       expect(segs[0].key).toBe('panelOpen');
     }
+  });
+});
+
+describe('saveState の保存失敗ハンドリング', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    setSaveErrorHandler(null);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setSaveErrorHandler(null);
+  });
+
+  it('保存に成功するとtrueを返し、ハンドラにはnull(=異常なし)を通知する', () => {
+    const handler = vi.fn();
+    setSaveErrorHandler(handler);
+
+    expect(saveState(emptyStateForTest())).toBe(true);
+    expect(handler).toHaveBeenCalledWith(null);
+  });
+
+  it('容量超過で保存できない場合でも例外を投げず、falseを返してハンドラに通知する', () => {
+    // 保存はほぼ全ての操作から呼ばれるため、ここで例外が漏れると各ハンドラで未捕捉になり、
+    // UI上は成功したように見えたままデータが失われる
+    const err = new DOMException('quota', 'QuotaExceededError');
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw err; });
+    const handler = vi.fn();
+    setSaveErrorHandler(handler);
+
+    expect(() => saveState(emptyStateForTest())).not.toThrow();
+    expect(saveState(emptyStateForTest())).toBe(false);
+    expect(handler).toHaveBeenCalledWith(err);
+  });
+});
+
+describe('initState の読み込み失敗ハンドリング', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('保存データがJSONとして壊れている場合、StateLoadErrorを投げて生の文字列を保持する', async () => {
+    localStorage.setItem(STORAGE_KEY, '{壊れたJSON');
+
+    await expect(initState()).rejects.toThrow(StateLoadError);
+    // エラー画面から救出できるよう、読めなかった中身をそのまま持たせる
+    await expect(initState()).rejects.toMatchObject({ raw: '{壊れたJSON' });
+  });
+
+  it('保存データが本ツールの形式でない場合もStateLoadErrorを投げる', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ foo: 'bar' }));
+
+    await expect(initState()).rejects.toThrow(StateLoadError);
+  });
+});
+
+describe('backupCurrentState / clearStoredState', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('退避したstateはreadBackupRawで読み出せる', () => {
+    const state = emptyStateForTest();
+    state.users.push({ id: 'u1', displayName: 'テスト' });
+
+    expect(backupCurrentState(state)).toBe(true);
+    expect(JSON.parse(readBackupRaw()).users[0].displayName).toBe('テスト');
+  });
+
+  it('clearStoredStateは保存データだけを消し、バックアップは残す(復元の最後の手段のため)', () => {
+    saveState(emptyStateForTest());
+    backupCurrentState(emptyStateForTest());
+
+    clearStoredState();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(readBackupRaw()).not.toBeNull();
+  });
+});
+
+describe('importStateFromFile の検証', () => {
+  function fileOf(obj) {
+    return new File([typeof obj === 'string' ? obj : JSON.stringify(obj)], 'test.json', { type: 'application/json' });
+  }
+
+  it('本ツールの形式に一致するファイルは読み込める', async () => {
+    const parsed = await importStateFromFile(fileOf(emptyStateForTest()));
+    expect(parsed.users).toEqual([]);
+  });
+
+  it('JSONとして壊れているファイルは拒否する', async () => {
+    await expect(importStateFromFile(fileOf('{壊れたJSON'))).rejects.toThrow('JSONとして読み取れませんでした');
+  });
+
+  it('必須配列が欠けているファイルは拒否する', async () => {
+    await expect(importStateFromFile(fileOf({ events: [] }))).rejects.toThrow('本ツールのエクスポートデータと一致しません');
+  });
+
+  it('この版より新しいスキーマのファイルは拒否する(知らないフィールドを誤変換しないため)', async () => {
+    const future = { ...emptyStateForTest(), schemaVersion: 999 };
+    await expect(importStateFromFile(fileOf(future))).rejects.toThrow('新しい版');
+  });
+
+  it('古いスキーマのファイルは受け入れる(migrateSegmentsが後方互換パッチを当てるため)', async () => {
+    const old = { ...emptyStateForTest(), schemaVersion: 1 };
+    await expect(importStateFromFile(fileOf(old))).resolves.toBeTruthy();
+  });
+
+  it('http/https/data以外のスキームの画像URLは空にする', async () => {
+    const state = emptyStateForTest();
+    state.segments.push({
+      id: 'seg1', type: 'panelOpen', config: { imageUrl: 'javascript:alert(1)', conditions: [] },
+    });
+
+    const parsed = await importStateFromFile(fileOf(state));
+    expect(parsed.segments[0].config.imageUrl).toBe('');
+  });
+
+  it('通常のhttps画像URLと相対パスはそのまま残す', async () => {
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', type: 'panelOpen', config: { imageUrl: 'https://example.com/a.png', conditions: [] } });
+    state.segments.push({ id: 'b', type: 'panelOpen', config: { imageUrl: 'img/local.png', conditions: [] } });
+
+    const parsed = await importStateFromFile(fileOf(state));
+    expect(parsed.segments[0].config.imageUrl).toBe('https://example.com/a.png');
+    expect(parsed.segments[1].config.imageUrl).toBe('img/local.png');
+  });
+});
+
+describe('countExternalImageUrls', () => {
+  it('外部ホストを指す画像URLの件数を数える(インポート時の警告に使う)', () => {
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', config: { imageUrl: 'https://example.com/a.png' } });
+    state.segments.push({ id: 'b', config: { imageUrl: 'img/local.png' } });
+    state.segments.push({ id: 'c', config: {} });
+
+    expect(countExternalImageUrls(state)).toBe(1);
+  });
+});
+
+describe('scheduleSave(テキスト入力用の遅延保存)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('呼んだ直後は書き込まれず、一定時間後にまとめて1回だけ書き込む', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const state = emptyStateForTest();
+
+    scheduleSave(state);
+    scheduleSave(state);
+    scheduleSave(state);
+    expect(setItem).not.toHaveBeenCalled();
+
+    vi.runAllTimers();
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('flushScheduledSaveで保留中の保存を即座に書き切れる(ページ離脱時に使う)', () => {
+    const state = emptyStateForTest();
+    state.users.push({ id: 'u1', displayName: '離脱前の入力' });
+    scheduleSave(state);
+
+    flushScheduledSave();
+
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY)).users[0].displayName).toBe('離脱前の入力');
+  });
+
+  it('遅延保存の保留中に即時保存が走っても、二重に書き込まない', () => {
+    const state = emptyStateForTest();
+    scheduleSave(state);
+    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+
+    saveState(state);
+    vi.runAllTimers();
+
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('必須配列の補完(不整合データでダッシュボードが落ちないようにする)', () => {
+  it('conditionsが欠けたpanelOpen segmentは空配列で補完される', () => {
+    const state = {
+      ...emptyStateForTest(),
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: null, name: 'パネル', date: null, config: { imageUrl: '' },
+      }],
+    };
+
+    migrateSegments(state, 'event1');
+
+    expect(state.segments[0].config.conditions).toEqual([]);
+  });
+
+  it('punishmentsが欠けたshiraPai segmentは空配列で補完される', () => {
+    const state = {
+      ...emptyStateForTest(),
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg1', eventId: 'event1', type: 'shiraPai', key: null, name: '罰ゲーム', date: null, config: {},
+      }],
+    };
+
+    migrateSegments(state, 'event1');
+
+    expect(state.segments[0].config.punishments).toEqual([]);
+  });
+
+  it('既存の中身がある場合は上書きしない', () => {
+    const state = {
+      ...emptyStateForTest(),
+      events: [{ id: 'event1' }],
+      segments: [{
+        id: 'seg1', eventId: 'event1', type: 'panelOpen', key: null, name: 'パネル', date: null, config: { conditions: [{ id: 'c1' }] },
+      }],
+    };
+
+    migrateSegments(state, 'event1');
+
+    expect(state.segments[0].config.conditions).toHaveLength(1);
+  });
+});
+
+describe('プロトコル相対URLの扱い', () => {
+  function fileOf(obj) {
+    return new File([JSON.stringify(obj)], 'test.json', { type: 'application/json' });
+  }
+
+  it('プロトコル相対URL(//host/x.png)は外部画像として件数に数える', () => {
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', config: { imageUrl: '//evil.example.com/x.png' } });
+    state.segments.push({ id: 'b', config: { imageUrl: 'https://example.com/b.png' } });
+    state.segments.push({ id: 'c', config: { imageUrl: 'img/local.png' } });
+
+    // 「外部画像0件」と報告したまま外部へリクエストが飛ぶ状態を作らない
+    expect(countExternalImageUrls(state)).toBe(2);
+  });
+
+  it('プロトコル相対URLはサニタイズでは消さない(表示は警告件数で判断させる)', async () => {
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', type: 'panelOpen', config: { imageUrl: '//example.com/x.png', conditions: [] } });
+
+    const parsed = await importStateFromFile(fileOf(state));
+    expect(parsed.segments[0].config.imageUrl).toBe('//example.com/x.png');
+  });
+});
+
+describe('clearBackupState / clearStoredState と遅延保存の関係', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('clearBackupStateはバックアップだけを消し、本体の保存データは残す', () => {
+    saveState(emptyStateForTest());
+    backupCurrentState(emptyStateForTest());
+
+    clearBackupState();
+
+    expect(readBackupRaw()).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).not.toBeNull();
+  });
+
+  it('clearStoredStateは保留中の遅延保存を取り消す(消したデータが後から書き戻らない)', () => {
+    vi.useFakeTimers();
+    try {
+      scheduleSave(emptyStateForTest());
+      clearStoredState();
+      vi.runAllTimers();
+
+      expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('前後に空白がある画像URLの扱い', () => {
+  function fileOf(obj) {
+    return new File([JSON.stringify(obj)], 'test.json', { type: 'application/json' });
+  }
+
+  it('先頭に空白があっても外部画像として件数に数える', () => {
+    // ブラウザはsrcを解決する前に前後の空白・制御文字を除去するため、
+    // 判定側が素通しすると「0件」と報告したまま実際には外部へリクエストが飛ぶ
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', config: { imageUrl: '  https://evil.example.com/x.png' } });
+    state.segments.push({ id: 'b', config: { imageUrl: '\t//evil.example.com/y.png' } });
+
+    expect(countExternalImageUrls(state)).toBe(2);
+  });
+
+  it('先頭に空白を付けたjavascript:スキームもサニタイズで空にする', async () => {
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', type: 'panelOpen', config: { imageUrl: ' \njavascript:alert(1)', conditions: [] } });
+
+    const parsed = await importStateFromFile(fileOf(state));
+    expect(parsed.segments[0].config.imageUrl).toBe('');
+  });
+});
+
+describe('hasBackup', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('バックアップの有無を、値を読み出さずに判定できる', () => {
+    expect(hasBackup()).toBe(false);
+
+    backupCurrentState(emptyStateForTest());
+    expect(hasBackup()).toBe(true);
+
+    clearBackupState();
+    expect(hasBackup()).toBe(false);
+  });
+
+  it('本体の保存データだけがある状態ではfalseを返す', () => {
+    saveState(emptyStateForTest());
+    expect(hasBackup()).toBe(false);
+  });
+});
+
+describe('URL文字列の途中にタブ・改行がある場合', () => {
+  function fileOf(obj) {
+    return new File([JSON.stringify(obj)], 'test.json', { type: 'application/json' });
+  }
+
+  it('スキームの途中に改行が挟まっていても外部画像として数える', () => {
+    // ブラウザはタブ・LF・CRをURL中のどの位置からでも除去してから解決するため、
+    // 端だけを見て判定すると「h(改行)ttps://…」が相対パスと誤判定されて素通しになる
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', config: { imageUrl: 'h\nttps://evil.example.com/x.png' } });
+    state.segments.push({ id: 'b', config: { imageUrl: 'htt\tps://evil.example.com/y.png' } });
+
+    expect(countExternalImageUrls(state)).toBe(2);
+  });
+
+  it('スキームの途中に改行を挟んだjavascript:もサニタイズで空にする', async () => {
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', type: 'panelOpen', config: { imageUrl: 'java\nscript:alert(1)', conditions: [] } });
+
+    const parsed = await importStateFromFile(fileOf(state));
+    expect(parsed.segments[0].config.imageUrl).toBe('');
+  });
+});
+
+describe('バックスラッシュを含む画像URL', () => {
+  it('「/\\host/x.png」形式も外部画像として数える', () => {
+    // http(s)ではバックスラッシュがスラッシュと同一視され、//host/… として解決される
+    const state = emptyStateForTest();
+    state.segments.push({ id: 'a', config: { imageUrl: '/\\evil.example.com/x.png' } });
+    state.segments.push({ id: 'b', config: { imageUrl: 'https:\\\\evil.example.com/y.png' } });
+    state.segments.push({ id: 'c', config: { imageUrl: 'img/local.png' } });
+
+    expect(countExternalImageUrls(state)).toBe(2);
+  });
+});
+
+describe('canToggleUserTracking / isUserTrackingEnabled', () => {
+  function segmentOf(type, extra = {}) {
+    return { id: 'seg1', type, config: {}, ...extra };
+  }
+
+  it('trackUsers未設定のsegmentは「記録する」として扱う(既存データの移行を不要にするための既定)', () => {
+    expect(isUserTrackingEnabled(segmentOf('counter'))).toBe(true);
+  });
+
+  it('trackUsers:false を設定すると「記録しない」になる', () => {
+    expect(isUserTrackingEnabled(segmentOf('counter', { trackUsers: false }))).toBe(false);
+  });
+
+  it('trackUsers:true を明示した場合も「記録する」', () => {
+    expect(isUserTrackingEnabled(segmentOf('counter', { trackUsers: true }))).toBe(true);
+  });
+
+  it.each([
+    ['panelOpen'],
+    ['shiraPai'],
+    ['categoryEndurance'],
+    ['counter'],
+  ])('ギフトを記録する企画(%s)は切り替えできる', (type) => {
+    expect(canToggleUserTracking(segmentOf(type))).toBe(true);
+  });
+
+  // shopGacha: ポイント残高の集計・特典の重複交換防止・ガチャの当選済み判定が全てuserIdに
+  //            依存するため、オフにすると機能が成立しない。
+  // setlist:   ギフト記録の機能自体を持たないため、切り替えても何も変わらない。
+  // どちらも、誤ってtrackUsers:falseが書き込まれた既存データを読んでも「記録する」に倒す。
+  it.each([
+    ['買い物orガチャ枠', 'shopGacha'],
+    ['ラスラン', 'setlist'],
+  ])('%sは切り替え不可で、trackUsers:falseが入っていても「記録する」に倒す', (_label, type) => {
+    expect(canToggleUserTracking(segmentOf(type))).toBe(false);
+    expect(isUserTrackingEnabled(segmentOf(type, { trackUsers: false }))).toBe(true);
   });
 });

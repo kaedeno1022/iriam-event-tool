@@ -512,6 +512,37 @@ describe('renderShopGacha', () => {
         expect(state.segments[0].config.freeDrawGrants).toHaveLength(0);
         expect(state.segments[0].config.streamPostGrantedUserIds).toHaveLength(0);
       });
+
+      it('一括付与を取り消すと二重付与防止の記録からも外れ、再度付与対象に戻る', async () => {
+        state.users.push({ id: 'u2', displayName: 'ユーザーB', streamPostDone: true });
+        rerender();
+        await clickByText(container, 'button', 'ガチャ');
+        await clickByText(container, 'button', '＋ 配信ポスト特典を一括付与(対象1人)');
+        expect(state.segments[0].config.streamPostGrantedUserIds).toEqual(['u2']);
+
+        await clickByText(container, 'button', '↩');
+
+        // 記録が残ったままだと、そのユーザーは以後どれだけ一括付与しても対象外になり、
+        // JSONを手で編集する以外に復旧できなくなる
+        expect(state.segments[0].config.freeDrawGrants).toHaveLength(0);
+        expect(state.segments[0].config.streamPostGrantedUserIds).toHaveLength(0);
+        expect(findByText(container, 'button', '＋ 配信ポスト特典を一括付与(対象1人)')).toBeTruthy();
+      });
+
+      it('手動付与の取り消しでは二重付与防止の記録を消さない(次の一括付与で重複させないため)', async () => {
+        state.users.push({ id: 'u2', displayName: 'ユーザーB', streamPostDone: true });
+        state.segments[0].config.streamPostGrantedUserIds = ['u2'];
+        state.segments[0].config.freeDrawGrants = [
+          { id: 'manual1', timestamp: '2026-08-18T10:00:00.000Z', userId: 'u2', count: 3 },
+        ];
+        rerender();
+        await clickByText(container, 'button', 'ガチャ');
+
+        await clickByText(container, 'button', '↩');
+
+        expect(state.segments[0].config.freeDrawGrants).toHaveLength(0);
+        expect(state.segments[0].config.streamPostGrantedUserIds).toEqual(['u2']);
+      });
     });
   });
 

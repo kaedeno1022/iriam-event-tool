@@ -5,6 +5,7 @@ import { openConditionModal } from './conditionModal.js';
 import { openNoteModal } from './noteModal.js';
 import { showAlert, showConfirm, showPrompt } from './dialogs.js';
 import { segmentNameHeader } from './segmentHeader.js';
+import { userLabel } from './userLabel.js';
 
 // 条件(condition)は「このパネル(1枚の画像)を開放するために満たすべき項目」。
 // 1 segmentインスタンス = 1パネルという設計のため、達成判定はsegment単位でまとめて行う。
@@ -29,7 +30,9 @@ export function computeConditionProgress(state, condition) {
 }
 
 export function computeSegmentProgress(state, segment) {
-  const conditions = segment.config.conditions.map((c) => ({ ...c, ...computeConditionProgress(state, c) }));
+  // conditionsが欠けた不整合データでも落とさない。ここはダッシュボード(フォールバック先の
+  // ルート)からも呼ばれるため、例外を投げるとツール全体へ到達する手段が無くなる。
+  const conditions = (segment.config.conditions ?? []).map((c) => ({ ...c, ...computeConditionProgress(state, c) }));
   const achieved = conditions.length > 0 && conditions.every((c) => c.achieved);
   return { conditions, achieved };
 }
@@ -52,7 +55,7 @@ function conditionSummaryLabel(condition, state) {
 }
 
 function renderConditionRow({
-  state, save, rerender, segment, condition,
+  state, save, saveText = save, rerender, segment, condition,
 }) {
   const progress = computeConditionProgress(state, condition);
 
@@ -62,7 +65,7 @@ function renderConditionRow({
     title: '削除',
     onclick: async () => {
       if (!(await showConfirm(`条件「${condition.label}」を削除しますか？`))) return;
-      segment.config.conditions = segment.config.conditions.filter((c) => c.id !== condition.id);
+      segment.config.conditions = segment.config.conditions.filter((c) => c !== condition);
       save();
       rerender();
     },
@@ -119,7 +122,7 @@ function renderConditionRow({
       // 囲んでいないためEnter単体ではblurせずchangeが発火しないので、onkeydownでは
       // rerender()を直接呼ばずblur()するだけに留める(focus中の要素をrerenderでDOMごと
       // 消すと、blur/changeが再入的に発火してrerenderが二重に走りうるため)。
-      oninput: (e) => { condition.current = Math.max(0, Number(e.target.value) || 0); save(); },
+      oninput: (e) => { condition.current = Math.max(0, Number(e.target.value) || 0); saveText(); },
       onchange: () => { rerender(); },
       onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); },
     });
@@ -171,7 +174,7 @@ function renderConditionRow({
 }
 
 export function renderPanelOpen({
-  state, save, rerender, container, segmentId,
+  state, save, saveText = save, rerender, container, segmentId,
 }) {
   const segment = findPanelSegment(state, segmentId);
   if (!segment) {
@@ -182,14 +185,14 @@ export function renderPanelOpen({
 
   const progress = computeSegmentProgress(state, segment);
   const conditionRows = segment.config.conditions.map((condition) => renderConditionRow({
-    state, save, rerender, segment, condition,
+    state, save, saveText, rerender, segment, condition,
   }));
 
   const imageUrlInput = el('input', {
     type: 'text',
     value: segment.config.imageUrl || '',
     placeholder: '画像URL(任意)',
-    oninput: (e) => { segment.config.imageUrl = e.target.value; save(); },
+    oninput: (e) => { segment.config.imageUrl = e.target.value; saveText(); },
   });
 
   const addConditionBtn = el('button', {
@@ -201,7 +204,14 @@ export function renderPanelOpen({
   }, '＋ 条件を追加');
 
   const panelCard = el('div', { class: progress.achieved ? 'card panel-item achieved' : 'card panel-item' }, [
-    segment.config.imageUrl ? el('img', { src: segment.config.imageUrl, class: 'panel-item-thumb', alt: segment.name }) : null,
+    // 外部URLの画像は、インポートしたデータ由来だと閲覧者の情報が配信元へ渡る。
+    // referrerpolicyでどのページを見ているかまでは渡さないようにしておく
+    // (アクセス自体は画像表示に必要なため防げない。インポート時に件数を警告している)。
+    segment.config.imageUrl
+      ? el('img', {
+        src: segment.config.imageUrl, class: 'panel-item-thumb', alt: segment.name, referrerpolicy: 'no-referrer',
+      })
+      : null,
     el('div', { class: 'panel-item-body' }, [
       el('div', { class: 'panel-item-title' }, [
         el('h3', {}, segment.name),
@@ -222,11 +232,10 @@ export function renderPanelOpen({
   for (const c of segment.config.conditions) conditionLabelById.set(c.id, c.label);
 
   const logRows = logs.map((l) => {
-    const user = state.users.find((u) => u.id === l.userId);
     const gift = l.giftId ? state.giftMaster.find((g) => g.id === l.giftId) : null;
     return el('tr', {}, [
       el('td', {}, formatDateTime(l.timestamp)),
-      el('td', {}, user ? user.displayName : '(削除済みユーザー)'),
+      el('td', {}, userLabel(state, l.userId)),
       el('td', {}, l.conditionId ? (conditionLabelById.get(l.conditionId) ?? '(削除済み条件)') : '-'),
       el('td', {}, gift ? gift.name : `直接入力 ${l.points}pt`),
       el('td', {}, `×${l.qty}`),
@@ -251,7 +260,7 @@ export function renderPanelOpen({
           title: '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？'))) return;
-            state.giftLogs = state.giftLogs.filter((x) => x.id !== l.id);
+            state.giftLogs = state.giftLogs.filter((x) => x !== l);
             save();
             rerender();
           },
@@ -266,7 +275,7 @@ export function renderPanelOpen({
   ]);
 
   container.append(el('section', { class: 'view-panel-open' }, [
-    segmentNameHeader(segment, save),
+    segmentNameHeader(segment, saveText),
     panelCard,
     el('h3', {}, '直近の記録'),
     logTable,

@@ -6,6 +6,7 @@ import { openGiftRecordModal } from './giftRecordModal.js';
 import { collapsibleSection } from './economyHelpers.js';
 import { showConfirm, showPrompt } from './dialogs.js';
 import { segmentNameHeader } from './segmentHeader.js';
+import { userLabel } from './userLabel.js';
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key==='categoryEndurance')を表示する。
@@ -28,7 +29,7 @@ export function resetCategoryEnduranceUiState() {
 }
 
 export function renderCategoryEndurance({
-  state, save, rerender, container, segmentId,
+  state, save, saveText = save, rerender, container, segmentId,
 }) {
   const segment = findSegment(state, segmentId);
   if (!segment) {
@@ -144,11 +145,10 @@ export function renderCategoryEndurance({
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
     .slice(0, 20);
   const giftLogRows = giftLogs.map((l) => {
-    const user = state.users.find((u) => u.id === l.userId);
     const gift = l.giftId ? state.giftMaster.find((g) => g.id === l.giftId) : null;
     return el('tr', {}, [
       el('td', {}, formatDateTime(l.timestamp)),
-      el('td', {}, user ? user.displayName : '(削除済みユーザー)'),
+      el('td', {}, userLabel(state, l.userId)),
       el('td', {}, gift ? gift.name : `直接入力 ${l.points}pt`),
       el('td', {}, `×${l.qty}`),
       el('td', {}, [
@@ -162,7 +162,7 @@ export function renderCategoryEndurance({
               const record = giftRecord(gift.id);
               if (record) record.given = Math.max(0, record.given - l.qty);
             }
-            state.giftLogs = state.giftLogs.filter((x) => x.id !== l.id);
+            state.giftLogs = state.giftLogs.filter((x) => x !== l);
             save();
             rerender();
           },
@@ -187,7 +187,7 @@ export function renderCategoryEndurance({
   });
 
   container.append(el('section', {}, [
-    segmentNameHeader(segment, save),
+    segmentNameHeader(segment, saveText),
     el('div', { class: 'card' }, [
       el('div', { class: 'form-row' }, [el('label', {}, '対象カテゴリ'), categorySelect]),
       collapsibleSection({

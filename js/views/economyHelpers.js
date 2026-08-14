@@ -1,13 +1,9 @@
 import { el } from '../render.js';
 import { computeEarnedPoints, computeSpentPoints } from '../points.js';
+import { userLabel } from './userLabel.js';
 
 // 買い物orガチャ枠(旧メイド枠・役職)など、「ギフト記録でpt獲得→お買い物形式特典/ガチャでpt消費」
 // という共通の経済モデルを持つ企画セグメントで使い回す表示ヘルパー群。
-
-export function userName(state, userId) {
-  const user = state.users.find((u) => u.id === userId);
-  return user ? user.displayName : '(削除済みユーザー)';
-}
 
 export function stockLabel(stock) {
   return stock === null ? '無制限' : `残り${stock}`;
@@ -37,7 +33,7 @@ export function filterByUser(logs, userId) {
 }
 
 export function historyTitle(state, baseTitle, userId) {
-  return userId ? `${baseTitle}(${userName(state, userId)})` : `${baseTitle}(全体)`;
+  return userId ? `${baseTitle}(${userLabel(state, userId)})` : `${baseTitle}(全体)`;
 }
 
 export function pointsBalance(state, segment, userId) {

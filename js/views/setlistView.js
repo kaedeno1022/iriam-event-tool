@@ -18,7 +18,7 @@ function moveSong(songs, index, direction) {
 }
 
 export function renderSetlist({
-  state, save, rerender, container, segmentId,
+  state, save, saveText = save, rerender, container, segmentId,
 }) {
   const segment = findSegment(state, segmentId);
   if (!segment) {
@@ -42,7 +42,7 @@ export function renderSetlist({
       type: 'text',
       class: 'song-title-input',
       value: song.title,
-      oninput: (e) => { song.title = e.target.value; save(); },
+      oninput: (e) => { song.title = e.target.value; saveText(); },
     }),
     el('button', {
       type: 'button', class: 'btn-icon', title: '上へ', disabled: index === 0, onclick: () => { moveSong(songs, index, -1); save(); rerender(); },
@@ -56,7 +56,7 @@ export function renderSetlist({
       title: '削除',
       onclick: async () => {
         if (!(await showConfirm(`「${song.title}」をセトリから削除しますか？`))) return;
-        segment.config.songs = songs.filter((s) => s.id !== song.id);
+        segment.config.songs = songs.filter((s) => s !== song);
         save();
         rerender();
       },
@@ -76,7 +76,7 @@ export function renderSetlist({
   }, '＋ 曲を追加');
 
   container.append(el('section', {}, [
-    segmentNameHeader(segment, save),
+    segmentNameHeader(segment, saveText),
     el('div', { class: 'card' }, [
       el('p', { class: 'empty-hint' }, '曲名を登録し、↑↓で歌う順に並び替えます。歌い終えたら「済み」にチェックしてください。'),
       el('p', {}, `済み ${doneCount} / 全${songs.length}曲`),

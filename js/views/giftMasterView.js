@@ -2,9 +2,10 @@ import { el, clear } from '../render.js';
 import { listCategories, searchGifts, addCustomGift } from '../giftMaster.js';
 import { showAlert, showConfirm } from './dialogs.js';
 
-export function moveGiftInCategory(giftMaster, giftId, direction) {
-  const gift = giftMaster.find((g) => g.id === giftId);
-  if (!gift) return;
+// giftはギフトそのもの(giftMasterの要素)を受け取る。IDで引き直すと、重複IDが残っている
+// 既存データで別のギフトを掴んで意図しない並び替えになりうるため。
+export function moveGiftInCategory(giftMaster, gift, direction) {
+  if (!gift || !giftMaster.includes(gift)) return;
   const sameCategoryIndices = giftMaster
     .map((g, idx) => (g.category === gift.category ? idx : -1))
     .filter((idx) => idx !== -1);
@@ -16,7 +17,9 @@ export function moveGiftInCategory(giftMaster, giftId, direction) {
   [giftMaster[i], giftMaster[j]] = [giftMaster[j], giftMaster[i]];
 }
 
-export function renderGiftMaster({ state, save, rerender, container }) {
+export function renderGiftMaster({
+  state, save, saveText = save, rerender, container,
+}) {
   let category = 'all';
   let query = '';
   let sort = 'manual';
@@ -38,25 +41,25 @@ export function renderGiftMaster({ state, save, rerender, container }) {
       el('tbody', {}, results.map((g) => el('tr', {}, [
         el('td', {}, el('input', {
           type: 'text', value: g.name,
-          oninput: (e) => { g.name = e.target.value; save(); },
+          oninput: (e) => { g.name = e.target.value; saveText(); },
         })),
         el('td', {}, el('input', {
           type: 'number', value: g.points ?? '', placeholder: '不明',
-          oninput: (e) => { g.points = e.target.value === '' ? null : Number(e.target.value); save(); },
+          oninput: (e) => { g.points = e.target.value === '' ? null : Number(e.target.value); saveText(); },
         })),
         el('td', {}, el('input', {
           type: 'text', value: g.category,
-          oninput: (e) => { g.category = e.target.value; save(); },
+          oninput: (e) => { g.category = e.target.value; saveText(); },
         })),
         el('td', {}, String(g.useCount)),
         el('td', { class: 'gift-master-actions' }, [
-          el('button', { type: 'button', class: 'btn-icon', title: '上へ', onclick: () => { moveGiftInCategory(state.giftMaster, g.id, -1); save(); renderList(); } }, '↑'),
-          el('button', { type: 'button', class: 'btn-icon', title: '下へ', onclick: () => { moveGiftInCategory(state.giftMaster, g.id, 1); save(); renderList(); } }, '↓'),
+          el('button', { type: 'button', class: 'btn-icon', title: '上へ', onclick: () => { moveGiftInCategory(state.giftMaster, g, -1); save(); renderList(); } }, '↑'),
+          el('button', { type: 'button', class: 'btn-icon', title: '下へ', onclick: () => { moveGiftInCategory(state.giftMaster, g, 1); save(); renderList(); } }, '↓'),
           el('button', {
             type: 'button', class: 'btn-icon', title: '削除',
             onclick: async () => {
               if (!(await showConfirm(`「${g.name}」を削除しますか？`))) return;
-              state.giftMaster = state.giftMaster.filter((x) => x.id !== g.id);
+              state.giftMaster = state.giftMaster.filter((x) => x !== g);
               save();
               renderList();
             },

@@ -26,8 +26,22 @@ import { genId } from './id.js';
 // あれば自動でcountに反映する(conditionIdは特定ルールに紐づけず常にnull)。記録時に適用した
 // delta(1個あたり)はログ自体に記憶し、個数編集・取り消し時はその記憶値で補正する
 // (ルールを事後に変更・削除しても過去の記録の補正結果は変わらない)。
-const STORAGE_KEY = 'iriamEventTool:state:v2';
+export const STORAGE_KEY = 'iriamEventTool:state:v2';
+// インポート等の破壊的操作の直前に、直前のstateを退避しておくキー。読み込みは行わず、
+// 「取り違えたファイルを取り込んでしまった」時にエラー画面から手動で復元するためだけに使う。
+const BACKUP_KEY = 'iriamEventTool:backup:v2';
 const SCHEMA_VERSION = 6;
+
+// initState()が保存データを読めなかったことを表す。app.js側のエラー画面が、生の文字列(raw)を
+// そのままファイルへ書き出して救出できるようにするため、読めなかった中身を保持する。
+export class StateLoadError extends Error {
+  constructor(message, { raw = null, cause = null } = {}) {
+    super(message);
+    this.name = 'StateLoadError';
+    this.raw = raw;
+    this.cause = cause;
+  }
+}
 
 function emptyState() {
   return {
@@ -44,8 +58,18 @@ function emptyState() {
 async function buildInitialState() {
   const state = emptyState();
 
+  // GitHub Pagesは存在しないパスに対して200ではなく404 + HTMLを返すため、res.okを見ずに
+  // json()を呼ぶと「SyntaxErrorで初回起動が白画面」という原因の分かりにくい失敗になる。
   const res = await fetch('data/gifts.seed.json');
-  const seedGifts = await res.json();
+  if (!res.ok) {
+    throw new StateLoadError(`ギフト初期データの取得に失敗しました(HTTP ${res.status})`);
+  }
+  let seedGifts;
+  try {
+    seedGifts = await res.json();
+  } catch (err) {
+    throw new StateLoadError('ギフト初期データの形式が不正です', { cause: err });
+  }
   state.giftMaster = seedGifts.map((g) => ({
     id: genId('gift'),
     name: g.name,
@@ -278,6 +302,15 @@ function migrateLegacySegments(state) {
       seg.config.count = seg.config.count ?? 0;
       seg.config.rules = seg.config.rules ?? [];
     }
+
+    // 必須の配列が欠けたsegmentが1つでもあると、ダッシュボード(フォールバック先のルート)の
+    // 集計が例外で落ち、ツール全体に到達できなくなる。読み込み時に形だけ整えておく。
+    if (seg.type === 'panelOpen' && seg.config) {
+      seg.config.conditions = seg.config.conditions ?? [];
+    }
+    if (seg.type === 'shiraPai' && seg.config) {
+      seg.config.punishments = seg.config.punishments ?? [];
+    }
   }
 }
 
@@ -335,6 +368,27 @@ export function createSegmentInstance(state, {
   return segment;
 }
 
+// 「誰が投げたか」を残す必要のない企画では、ギフト記録のたびにユーザーを選ぶ手間を省く。
+// ただし次の2typeは切り替えの対象外(それぞれ理由が違う):
+//   - shopGacha: ポイント残高の集計・特典の重複交換防止・ガチャの当選済み判定が全て
+//                userIdに依存しており、ユーザー無しで記録すると残高が誰のものか決まらず
+//                機能そのものが成立しない
+//   - setlist:   ギフト記録の機能を持たない(曲の消化だけを扱う)ため、切り替えても
+//                何も変わらない。押せるが無意味なトグルを出さない
+const NO_USER_TOGGLE_TYPES = new Set(['shopGacha', 'setlist']);
+
+export function canToggleUserTracking(segment) {
+  return !NO_USER_TOGGLE_TYPES.has(segment.type);
+}
+
+// trackUsers未定義は「記録する」として扱う。この既定により、フラグ導入前に作られた
+// 既存segmentへのスキーマ移行が不要になる。切り替え対象外のtypeは、インポート等で
+// trackUsers:falseが混入していても「記録する」に倒して機能が壊れないようにする。
+export function isUserTrackingEnabled(segment) {
+  if (!canToggleUserTracking(segment)) return true;
+  return segment.trackUsers ?? true;
+}
+
 // 現在操作対象のイベントID。未設定時は先頭イベントにフォールバックする。
 export function getActiveEventId(state) {
   return state.activeEventId ?? state.events[0]?.id ?? null;
@@ -365,10 +419,30 @@ export function createEvent(state, {
 
 let cachedState = null;
 
+// localStorage自体が使えない環境(ブラウザ設定でサイトデータをブロックしている等)では
+// getItemも例外を投げうるため、読み出しも保護する。読めない場合は「保存データなし」扱いにし、
+// 初期データで起動する(この後の書き込みが失敗した時はsaveStateがsetSaveErrorHandlerで登録したハンドラへ通知する)。
+function readRawState() {
+  try {
+    return localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export async function initState() {
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const raw = readRawState();
   if (raw) {
-    cachedState = JSON.parse(raw);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      throw new StateLoadError('保存データが壊れているため読み込めませんでした', { raw, cause: err });
+    }
+    if (!isValidStateShape(parsed)) {
+      throw new StateLoadError('保存データの形式が不正なため読み込めませんでした', { raw });
+    }
+    cachedState = parsed;
     // イベントごとに補完する(eventId省略だと先頭イベントにしか後方互換パッチが効かないため)
     for (const event of cachedState.events ?? []) {
       migrateSegments(cachedState, event.id);
@@ -381,28 +455,140 @@ export async function initState() {
   return cachedState;
 }
 
-export function getState() {
-  if (!cachedState) {
-    throw new Error('initState() を先に呼び出すこと');
-  }
-  return cachedState;
+// 保存失敗の通知先(app.jsが警告バナーを登録する)。
+// 保存はほぼ全ての操作(ボタン・テキスト入力)から呼ばれる唯一の永続化経路なので、
+// ここで例外を投げると各ハンドラで未捕捉になり、UI上は成功したように見えたまま
+// データが失われる。失敗は握りつぶさず、必ず利用者に見える形で通知する。
+let saveErrorHandler = null;
+export function setSaveErrorHandler(handler) {
+  saveErrorHandler = handler;
 }
 
+// 注意: 書き込みの成否に関わらずcachedStateは引数のstateを指す。保存に失敗したデータ
+// (例: インポートを拒否した中身)がcachedStateに残るため、既定値に頼る引数なしの呼び出しを
+// 新たに増やすと、拒否したはずのデータを掴む経路になりうる。
+// 現状の呼び出し元は全て明示的にstateを渡している。
 export function saveState(state = cachedState) {
   cachedState = state;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // 遅延保存が予約されていれば、同じ内容を二重に書かないよう取り消す
+  cancelScheduledSave();
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (saveErrorHandler) saveErrorHandler(null);
+    return true;
+  } catch (err) {
+    // バナーにはerr.nameしか出ないため、切り分け用に原因を残す
+    // (容量超過以外に、循環参照によるJSON.stringify失敗なども同じ経路に来る)
+    console.error('保存に失敗しました', err);
+    if (saveErrorHandler) saveErrorHandler(err);
+    return false;
+  }
+}
+
+// --- 遅延保存(テキスト入力用) ---
+// 1文字ごとにstate全体を直列化してlocalStorageへ書くと、ログが増えた時にSPで体感できる
+// 入力遅延になる。タイマーはモジュールレベルに持たせ、画面の再描画で作り直されないようにする。
+const TEXT_SAVE_DELAY_MS = 300;
+let scheduledSaveTimer = null;
+
+function cancelScheduledSave() {
+  if (scheduledSaveTimer === null) return;
+  clearTimeout(scheduledSaveTimer);
+  scheduledSaveTimer = null;
+}
+
+// 連続入力中でも「最初の呼び出しから一定時間後に必ず1回保存する」方式にしている。
+// 入力のたびにタイマーを延長する方式だと、長文を打ち続けている間ずっと未保存のままになり、
+// その最中にタブを閉じられると入力が丸ごと失われるため。
+export function scheduleSave(state = cachedState) {
+  cachedState = state;
+  if (scheduledSaveTimer !== null) return;
+  scheduledSaveTimer = setTimeout(() => {
+    scheduledSaveTimer = null;
+    saveState(cachedState);
+  }, TEXT_SAVE_DELAY_MS);
+}
+
+// 保留中の遅延保存を即座に実行する。ページ離脱時とテストで使う。
+export function flushScheduledSave() {
+  if (scheduledSaveTimer === null) return;
+  cancelScheduledSave();
+  saveState(cachedState);
+}
+
+// テキストをJSONファイルとしてダウンロードさせる。通常のエクスポートに加え、
+// 壊れて読み込めなかった保存データをそのまま救出する用途(エラー画面)でも使うため、
+// stateオブジェクトではなく文字列を受け取る形にしてある。
+export function downloadJsonText(text, filenamePrefix = 'iriam-event-tool') {
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  a.href = url;
+  a.download = `${filenamePrefix}_${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 export function exportStateAsFile(state = cachedState) {
-  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  const now = new Date();
-  const stamp = now.toISOString().slice(0, 16).replace(/[-:T]/g, '');
-  a.href = url;
-  a.download = `iriam-event-tool_${stamp}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadJsonText(JSON.stringify(state, null, 2));
+}
+
+// --- 破壊的操作前のバックアップ ---
+// インポートは既存データを丸ごと置き換えるため、取り違えたファイルを取り込むと元に戻せない。
+// 直前のstateを別キーへ退避し、エラー画面から復元できるようにする。退避自体が容量不足で
+// 失敗しても本処理は続行させたいので、成否だけを返して例外は投げない。
+export function backupCurrentState(state = cachedState) {
+  try {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readBackupRaw() {
+  try {
+    return localStorage.getItem(BACKUP_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// バックアップの有無だけを調べる。getItemだとstate丸ごとの文字列(数百KB〜)を毎回受け取ることに
+// なり、描画のたびに呼ぶダッシュボードでは無視できないコストになるため、キーの存在だけを見る。
+export function hasBackup() {
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      if (localStorage.key(i) === BACKUP_KEY) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+// エラー画面からの最終手段。保存データを消して初期状態から起動し直せるようにする
+// (バックアップは残す。消してしまうと復元の最後の手段が無くなるため)。
+export function clearStoredState() {
+  // 保留中の遅延保存が後から発火すると、消したはずのデータが書き戻る
+  cancelScheduledSave();
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// バックアップはstate丸ごとのコピーで容量を常時圧迫するため、不要になったら消せるようにする。
+export function clearBackupState() {
+  try {
+    localStorage.removeItem(BACKUP_KEY);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const REQUIRED_ARRAY_FIELDS = ['events', 'segments', 'giftMaster', 'giftLogs', 'users'];
@@ -411,20 +597,80 @@ export function isValidStateShape(obj) {
   return !!obj && typeof obj === 'object' && REQUIRED_ARRAY_FIELDS.every((key) => Array.isArray(obj[key]));
 }
 
+// 画像URLとして受け入れるスキーム。javascript:はimgのsrcでは実行されないが、
+// 受け取ったファイル由来の値をそのままDOMへ渡さないための最低限の線引きとして弾いておく。
+// ブラウザはimgのsrcを解決する前に前後の空白・制御文字を除去するため、判定側も同じ前提に
+// 揃える。揃えないと「 https://…」(先頭に空白)がスキーム無し=相対パスと誤判定され、
+// サニタイズも外部件数の警告もすり抜けたまま実際には外部へリクエストが飛ぶ。
+function normalizeUrl(url) {
+  if (typeof url !== 'string') return '';
+  // URLパーサはタブ・LF・CRを位置に関わらず除去し、前後の空白類・C0制御文字も無視する。
+  // さらにhttp(s)などのspecial schemeではバックスラッシュをスラッシュと同一視するため、
+  // 「/\\evil.example.com/x.png」は外部URLとして解決される。判定側も同じ前提に揃えないと、
+  // サニタイズも外部件数の警告もすり抜けたまま実際には外部へリクエストが飛ぶ。
+  // 戻り値は判定にしか使わず、保存する値は書き換えない。
+  return url
+    .replace(/[\t\n\r]/g, '')
+    .replace(/^[\s\u0000-\u001F]+|[\s\u0000-\u001F]+$/g, '')
+    .replace(/\\/g, '/');
+}
+
+function isAllowedImageUrl(url) {
+  const u = normalizeUrl(url);
+  if (u === '') return false;
+  // 「//example.com/x.png」はスキーム無しに見えるが実際は外部を指すプロトコル相対URL。
+  // 同一パス扱いで素通しすると、後段の外部判定からも漏れるため明示的に外部として扱う。
+  if (u.startsWith('//')) return true;
+  // 同一オリジンの絶対パス・相対パスはそのまま許可する(自分で入力した値の互換のため)
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(u)) return true;
+  return /^(https?|data):/i.test(u);
+}
+
+// 外部ホストを指す画像URLかどうか。プロトコル相対URLも外部として数える。
+function isExternalImageUrl(url) {
+  return /^(https?:)?\/\//i.test(normalizeUrl(url));
+}
+
+// 外部ホストを指す画像URLの件数。インポートしたデータの画像を表示すると、その時点で
+// 閲覧者のIPアドレス等が相手のサーバに渡る。件数を確認ダイアログに出して判断材料にする。
+export function countExternalImageUrls(state) {
+  return (state.segments ?? []).filter((seg) => isExternalImageUrl(seg?.config?.imageUrl)).length;
+}
+
+// 受け取ったファイル由来のstateから、そのままDOMへ渡すと危険な値を落とす。
+function sanitizeImportedState(state) {
+  for (const seg of state.segments ?? []) {
+    if (seg?.config?.imageUrl && !isAllowedImageUrl(seg.config.imageUrl)) {
+      seg.config.imageUrl = '';
+    }
+  }
+  return state;
+}
+
 export function importStateFromFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
+      let parsed;
       try {
-        const parsed = JSON.parse(reader.result);
-        if (!isValidStateShape(parsed)) {
-          reject(new Error('ファイルの形式が本ツールのエクスポートデータと一致しません'));
-          return;
-        }
-        resolve(parsed);
+        parsed = JSON.parse(reader.result);
       } catch (err) {
-        reject(err);
+        reject(new Error('JSONとして読み取れませんでした', { cause: err }));
+        return;
       }
+      if (!isValidStateShape(parsed)) {
+        reject(new Error('ファイルの形式が本ツールのエクスポートデータと一致しません'));
+        return;
+      }
+      // 未来のスキーマで書かれたファイルは、この版のマイグレーションでは正しく解釈できない
+      // (知らないフィールドを落とす・誤変換する)ため取り込まない。古い版のファイルは
+      // migrateSegmentsが後方互換パッチを当てるので受け入れる。
+      const version = Number(parsed.schemaVersion);
+      if (Number.isFinite(version) && version > SCHEMA_VERSION) {
+        reject(new Error(`このファイルは新しい版(v${version})のツールで作られています。ツールを更新してから読み込んでください(現在: v${SCHEMA_VERSION})`));
+        return;
+      }
+      resolve(sanitizeImportedState(parsed));
     };
     reader.onerror = () => reject(reader.error);
     reader.readAsText(file);

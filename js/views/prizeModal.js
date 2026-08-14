@@ -16,7 +16,7 @@ export function openPrizeModal({
   const root = modalRoot();
   const isEdit = prize !== null;
   const source = prize ?? initialValues ?? {};
-  const others = isEdit ? prizes.filter((p) => p.id !== prize.id) : prizes;
+  const others = isEdit ? prizes.filter((p) => p !== prize) : prizes;
 
   function close() {
     clear(root);

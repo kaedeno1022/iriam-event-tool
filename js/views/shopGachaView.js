@@ -6,9 +6,10 @@ import {
 import { usersWithActivity } from '../points.js';
 import { getActiveEventId } from '../storage.js';
 import { createUserSelect } from './userSelect.js';
+import { userLabel } from './userLabel.js';
 import { openGiftRecordModal } from './giftRecordModal.js';
 import {
-  userName, stockLabel, remainingShopStock, eligibleShopItems,
+  stockLabel, remainingShopStock, eligibleShopItems,
   filterByUser, historyTitle, pointsBalance, freeDrawBalance, balanceText, collapsibleSection,
 } from './economyHelpers.js';
 import {
@@ -93,7 +94,7 @@ function renderPointsSection({
   const balanceRows = userIds.map((uid) => {
     const balance = pointsBalance(state, segment, uid);
     return el('tr', {}, [
-      el('td', {}, userName(state, uid)),
+      el('td', {}, userLabel(state, uid)),
       el('td', {}, `${balance.earned}pt`),
       el('td', {}, `${balance.spent}pt`),
       el('td', { class: balance.available < 0 ? 'points-negative' : '' }, `${balance.available}pt`),
@@ -107,7 +108,7 @@ function renderPointsSection({
     const gift = l.giftId ? state.giftMaster.find((g) => g.id === l.giftId) : null;
     return el('tr', {}, [
       el('td', {}, formatDateTime(l.timestamp)),
-      el('td', {}, userName(state, l.userId)),
+      el('td', {}, userLabel(state, l.userId)),
       el('td', {}, gift ? gift.name : `直接入力 ${l.points}pt`),
       el('td', {}, `×${l.qty}`),
       el('td', {}, [
@@ -115,7 +116,7 @@ function renderPointsSection({
           type: 'button', class: 'btn-icon', title: '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？'))) return;
-            state.giftLogs = state.giftLogs.filter((x) => x.id !== l.id);
+            state.giftLogs = state.giftLogs.filter((x) => x !== l);
             save();
             rerender();
           },
@@ -195,7 +196,7 @@ function renderShopSection({
         title: '削除',
         onclick: async () => {
           if (!(await showConfirm(`「${item.name}」を削除しますか？`))) return;
-          segment.config.shopItems = segment.config.shopItems.filter((x) => x.id !== item.id);
+          segment.config.shopItems = segment.config.shopItems.filter((x) => x !== item);
           save();
           rerender();
         },
@@ -212,14 +213,14 @@ function renderShopSection({
 
   const logRows = filterByUser(log, userId).slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 20).map((entry) => el('tr', {}, [
     el('td', {}, formatDateTime(entry.timestamp)),
-    el('td', {}, userName(state, entry.userId)),
+    el('td', {}, userLabel(state, entry.userId)),
     el('td', {}, entry.itemName),
     el('td', {}, [
       el('button', {
         type: 'button', class: 'btn-icon', title: '取り消し',
         onclick: async () => {
           if (!(await showConfirm('この交換記録を取り消しますか？'))) return;
-          segment.config.shopLog = log.filter((h) => h.id !== entry.id);
+          segment.config.shopLog = log.filter((h) => h !== entry);
           save();
           rerender();
         },
@@ -355,7 +356,7 @@ function renderGachaSection({
       title: '削除',
       onclick: async () => {
         if (!(await showConfirm('このレートを削除しますか？'))) return;
-        gacha.rateTiers = gacha.rateTiers.filter((x) => x.id !== tier.id);
+        gacha.rateTiers = gacha.rateTiers.filter((x) => x !== tier);
         save();
         rerender();
       },
@@ -395,7 +396,7 @@ function renderGachaSection({
         title: '削除',
         onclick: async () => {
           if (!(await showConfirm(`「${prize.name}」を削除しますか？`))) return;
-          gacha.prizes = gacha.prizes.filter((x) => x.id !== prize.id);
+          gacha.prizes = gacha.prizes.filter((x) => x !== prize);
           redistributeProbability(gacha.prizes, 100);
           save();
           rerender();
@@ -439,14 +440,22 @@ function renderGachaSection({
   }, '＋ お買い物からコピー');
 
   const grantRows = grants.map((grant) => el('div', { class: 'card punishment-row' }, [
-    el('span', { class: 'punishment-name' }, `${userName(state, grant.userId)} に${grant.count}回付与(${formatDateTime(grant.timestamp)})`),
+    el('span', { class: 'punishment-name' }, `${userLabel(state, grant.userId)} に${grant.count}回付与(${formatDateTime(grant.timestamp)})`),
     el('button', {
       type: 'button',
       class: 'btn-icon',
       title: '取り消し',
       onclick: async () => {
         if (!(await showConfirm('この付与を取り消しますか？'))) return;
-        segment.config.freeDrawGrants = grants.filter((g) => g.id !== grant.id);
+        segment.config.freeDrawGrants = grants.filter((g) => g !== grant);
+        // 配信ポスト特典の一括付与分を取り消した時は、二重付与防止の記録からも外す。
+        // そうしないとそのユーザーは以後どれだけ一括付与を実行しても対象から除外され続け、
+        // JSONを手で編集する以外に復旧できなくなる。手動付与(source無し)の取り消しでは
+        // 記録を残したままにする(残さないと、次の一括付与で二重に付与されてしまうため)。
+        if (grant.source === 'streamPost') {
+          segment.config.streamPostGrantedUserIds = segment.config.streamPostGrantedUserIds
+            .filter((id) => id !== grant.userId);
+        }
         save();
         rerender();
       },
@@ -480,8 +489,10 @@ function renderGachaSection({
       if (!(await showConfirm(`配信ポスト実施済みの${streamPostEligible.length}人に無料ガチャを1回ずつ付与しますか？`))) return;
       const timestamp = new Date().toISOString();
       for (const u of streamPostEligible) {
+        // sourceは取り消し時に「二重付与防止の記録も一緒に外すべきか」を判断するための印。
+        // これが付く前に作られた既存の付与履歴はsource無しのため、従来通り記録は残る。
         grants.push({
-          id: genId('freegrant'), timestamp, userId: u.id, count: 1,
+          id: genId('freegrant'), timestamp, userId: u.id, count: 1, source: 'streamPost',
         });
         grantedIds.push(u.id);
       }
@@ -511,13 +522,13 @@ function renderGachaSection({
 
   const holdings = holdingsByUser(log);
   const holdingRows = [...holdings.entries()].map(([uid, counts]) => el('tr', {}, [
-    el('td', {}, userName(state, uid)),
+    el('td', {}, userLabel(state, uid)),
     el('td', {}, formatHoldings(counts)),
   ]));
 
   const logRows = filterByUser(log, userId).slice().sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 20).map((entry) => el('tr', {}, [
     el('td', {}, formatDateTime(entry.timestamp)),
-    el('td', {}, userName(state, entry.userId)),
+    el('td', {}, userLabel(state, entry.userId)),
     el('td', {}, entry.prizeName),
     el('td', {}, MODE_LABEL[entry.mode] ?? entry.mode),
     el('td', {}, [
@@ -525,7 +536,7 @@ function renderGachaSection({
         type: 'button', class: 'btn-icon', title: '取り消し',
         onclick: async () => {
           if (!(await showConfirm('この結果を取り消しますか？'))) return;
-          segment.config.gachaLog = log.filter((h) => h.id !== entry.id);
+          segment.config.gachaLog = log.filter((h) => h !== entry);
           save();
           rerender();
         },
@@ -581,7 +592,7 @@ function renderGachaSection({
 }
 
 export function renderShopGacha({
-  state, save, rerender, container, segmentKey, segmentId,
+  state, save, saveText = save, rerender, container, segmentKey, segmentId,
 }) {
   const segment = findSegment(state, { segmentKey, segmentId });
   if (!segment) {
@@ -630,7 +641,7 @@ export function renderShopGacha({
   else sectionContent = renderPointsSection(sectionArgs);
 
   container.append(el('section', {}, [
-    segmentNameHeader(segment, save),
+    segmentNameHeader(segment, saveText),
     el('div', { class: 'card' }, [
       el('h3', {}, '対象ユーザー'),
       el('p', { class: 'empty-hint' }, '選択したユーザーで、下のどのタブでも操作できます。'),

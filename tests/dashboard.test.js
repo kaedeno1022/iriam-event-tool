@@ -2,8 +2,9 @@
 import {
   describe, it, expect, vi, beforeEach,
 } from 'vitest';
-import { renderDashboard } from '../js/views/dashboard.js';
-import { showPrompt, showSelect } from '../js/views/dialogs.js';
+import { renderDashboard, findOrphanGiftLogs } from '../js/views/dashboard.js';
+import { showPrompt, showSelect, showConfirm } from '../js/views/dialogs.js';
+import { backupCurrentState, readBackupRaw } from '../js/storage.js';
 
 vi.mock('../js/views/dialogs.js', () => ({
   showAlert: vi.fn(),
@@ -48,6 +49,7 @@ describe('renderDashboard', () => {
     vi.clearAllMocks();
     showPrompt.mockResolvedValue(null);
     showSelect.mockResolvedValue(null);
+    localStorage.clear();
     document.body.innerHTML = '<div id="root"></div>';
     container = document.getElementById('root');
     state = buildState();
@@ -215,5 +217,225 @@ describe('renderDashboard', () => {
     rerender();
 
     expect(container.textContent).toContain('[LOVE] 投げられた合計 3件 / 残り合計 7');
+  });
+});
+
+describe('findOrphanGiftLogs / データの整理', () => {
+  let container;
+  let state;
+  let save;
+  let rerender;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    showConfirm.mockResolvedValue(true);
+    localStorage.clear();
+    document.body.innerHTML = '<div id="root"></div>';
+    container = document.getElementById('root');
+    save = vi.fn();
+    state = buildState();
+    state.segments.push({
+      id: 'seg1', eventId: 'event1', type: 'counter', key: null, name: 'カウンター', order: 0, date: '2026-08-18', config: { count: 0, rules: [] },
+    });
+    // seg1(存在する企画)のログと、削除済み企画に紐づいたまま残っているログ
+    state.giftLogs.push(
+      { id: 'log1', segmentId: 'seg1', userId: 'u1', giftId: 'g1', points: 100, qty: 1, timestamp: '2026-08-18T10:00:00.000Z' },
+      { id: 'log2', segmentId: 'deleted-seg', userId: 'u1', giftId: 'g1', points: 100, qty: 1, timestamp: '2026-08-18T10:00:00.000Z' },
+      { id: 'log3', segmentId: 'deleted-seg', userId: 'u1', giftId: 'g1', points: 100, qty: 2, timestamp: '2026-08-18T10:00:00.000Z' },
+    );
+    rerender = () => {
+      container.replaceChildren();
+      renderDashboard({
+        state, save, rerender, container,
+      });
+    };
+    rerender();
+  });
+
+  it('存在しない企画に紐づくギフト記録だけを孤立ログとして拾う', () => {
+    expect(findOrphanGiftLogs(state).map((l) => l.id)).toEqual(['log2', 'log3']);
+  });
+
+  it('孤立ログが無ければ整理用のカードを表示しない', () => {
+    state.giftLogs = state.giftLogs.filter((l) => l.segmentId === 'seg1');
+    rerender();
+
+    expect(findByText(container, 'h3', 'データの整理')).toBeUndefined();
+  });
+
+  it('孤立ログがあれば件数付きの削除ボタンを表示する', () => {
+    expect(findByText(container, 'h3', 'データの整理')).toBeTruthy();
+    expect(findByText(container, 'button', '不要な記録2件を削除')).toBeTruthy();
+  });
+
+  it('削除を実行すると孤立ログだけが消え、生きている企画の記録は残る', async () => {
+    clickByText(container, 'button', '不要な記録2件を削除');
+    await flush();
+
+    expect(state.giftLogs.map((l) => l.id)).toEqual(['log1']);
+    expect(save).toHaveBeenCalled();
+  });
+
+  it('確認ダイアログでキャンセルすると何も消えない', async () => {
+    showConfirm.mockResolvedValue(false);
+
+    clickByText(container, 'button', '不要な記録2件を削除');
+    await flush();
+
+    expect(state.giftLogs).toHaveLength(3);
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('孤立ログ削除のID衝突耐性 / バックアップ削除', () => {
+  let container;
+  let state;
+  let save;
+  let rerender;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    showConfirm.mockResolvedValue(true);
+    localStorage.clear();
+    document.body.innerHTML = '<div id="root"></div>';
+    container = document.getElementById('root');
+    save = vi.fn();
+    state = buildState();
+    rerender = () => {
+      container.replaceChildren();
+      renderDashboard({
+        state, save, rerender, container,
+      });
+    };
+  });
+
+  it('生きている記録と孤立ログが同じidを持っていても、生きている方を消さない', async () => {
+    // 旧世代のID生成器は同一IDを量産しえたため、既存データには重複IDが実在しうる。
+    // 削除条件をid一致にすると、この状況で生きている記録まで巻き添えで消える。
+    state.segments.push({
+      id: 'seg1', eventId: 'event1', type: 'counter', key: null, name: 'カウンター', order: 0, date: '2026-08-18', config: { count: 0, rules: [] },
+    });
+    state.giftLogs.push(
+      { id: 'dup', segmentId: 'seg1', userId: 'u1', giftId: 'g1', points: 100, qty: 1, timestamp: '2026-08-18T10:00:00.000Z' },
+      { id: 'dup', segmentId: 'deleted-seg', userId: 'u1', giftId: 'g1', points: 100, qty: 1, timestamp: '2026-08-18T10:00:00.000Z' },
+    );
+    rerender();
+
+    clickByText(container, 'button', '不要な記録1件を削除');
+    await flush();
+
+    expect(state.giftLogs).toHaveLength(1);
+    expect(state.giftLogs[0].segmentId).toBe('seg1');
+  });
+
+  it('バックアップが存在する場合のみ削除ボタンを出し、押すとバックアップだけ消える', async () => {
+    backupCurrentState(state);
+    rerender();
+
+    expect(readBackupRaw()).not.toBeNull();
+    clickByText(container, 'button', 'インポート前バックアップを削除');
+    await flush();
+
+    expect(readBackupRaw()).toBeNull();
+  });
+
+  it('孤立ログもバックアップも無ければ整理カード自体を出さない', () => {
+    rerender();
+    expect(findByText(container, 'h3', 'データの整理')).toBeUndefined();
+  });
+});
+
+describe('renderDashboard のユーザー記録トグル', () => {
+  let container;
+  let state;
+  let save;
+  let rerender;
+
+  function addSegment(type, extra = {}) {
+    const segment = {
+      id: `seg-${type}`, eventId: 'event1', type, key: null, name: `${type}企画`, order: 0, date: '2026-08-18', config: {}, ...extra,
+    };
+    state.segments.push(segment);
+    return segment;
+  }
+
+  function toggleButtons() {
+    return [...container.querySelectorAll('.btn-user-toggle')];
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    document.body.innerHTML = '<div id="root"></div>';
+    container = document.getElementById('root');
+    state = buildState();
+    save = vi.fn();
+    rerender = () => {
+      container.replaceChildren();
+      renderDashboard({
+        state, save, rerender, container,
+      });
+    };
+  });
+
+  it('trackUsers未設定の企画は「記録する」状態のトグルを表示する', () => {
+    addSegment('counter');
+    rerender();
+
+    const [toggle] = toggleButtons();
+    expect(toggle.textContent).toBe('👤 記録');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(toggle.className).toContain('on');
+  });
+
+  it('trackUsers:false の企画は「記録しない」状態で表示する', () => {
+    addSegment('counter', { trackUsers: false });
+    rerender();
+
+    const [toggle] = toggleButtons();
+    expect(toggle.textContent).toBe('👤 なし');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle.className).toContain('off');
+  });
+
+  it('押すとtrackUsersが反転して保存され、表示も切り替わる', () => {
+    const segment = addSegment('counter');
+    rerender();
+
+    toggleButtons()[0].click();
+    expect(segment.trackUsers).toBe(false);
+    expect(save).toHaveBeenCalled();
+    expect(toggleButtons()[0].textContent).toBe('👤 なし');
+
+    toggleButtons()[0].click();
+    expect(segment.trackUsers).toBe(true);
+    expect(toggleButtons()[0].textContent).toBe('👤 記録');
+  });
+
+  // 切り替え対象外の判定はstorage.jsのcanToggleUserTrackingに委譲している。
+  // ここで両typeを列挙しておくことで、dashboard側がtypeをハードコードする実装へ
+  // 退行した場合(片方しか除外しなくなる)を検出する。
+  it.each([
+    ['買い物orガチャ枠', 'shopGacha'],
+    ['ラスラン', 'setlist'],
+  ])('%sにはトグルを出さない', (_label, type) => {
+    addSegment(type);
+    rerender();
+
+    // カード自体は出るが、トグルだけが無い状態であることを確かめる
+    expect(container.querySelectorAll('.segment-card')).toHaveLength(1);
+    expect(toggleButtons()).toHaveLength(0);
+  });
+
+  it('企画ごとに独立して切り替わる(同じイベント内の他の企画に波及しない)', () => {
+    const counter = addSegment('counter');
+    const panel = addSegment('panelOpen');
+    rerender();
+
+    const target = toggleButtons().find((b) => b.closest('.segment-card').textContent.includes(counter.name));
+    target.click();
+
+    expect(counter.trackUsers).toBe(false);
+    expect(panel.trackUsers).toBeUndefined();
   });
 });

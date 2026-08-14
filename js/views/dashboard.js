@@ -1,5 +1,8 @@
 import { el } from '../render.js';
-import { getActiveEvent, createSegmentInstance } from '../storage.js';
+import {
+  getActiveEvent, createSegmentInstance, hasBackup, clearBackupState,
+  canToggleUserTracking, isUserTrackingEnabled,
+} from '../storage.js';
 import { computeSegmentProgress } from './panelOpenView.js';
 import {
   showPrompt, showSelect, showConfirm,
@@ -94,13 +97,33 @@ function segmentCard({
     title: '削除',
     onclick: async () => {
       if (!(await showConfirm(`「${segment.name}」を削除しますか？\n(記録済みのギフト記録等は削除されませんが、以後どの画面にも表示されなくなります)`))) return;
-      state.segments = state.segments.filter((s) => s.id !== segment.id);
+      state.segments = state.segments.filter((s) => s !== segment);
       save();
       rerender();
     },
   }, '🗑');
 
+  // 「誰が投げたか」を残さない企画では、記録のたびにユーザーを選ぶ手間を省けるようにする。
+  // 切り替えても既存の記録に残っているユーザー紐づけは消さない(過去の記録を壊さないため、
+  // この設定は以後の記録にだけ効く)。ONに戻した時はキーを消さずtrueを書き戻す
+  // (未定義とtrueはisUserTrackingEnabledでは同値なので、どちらでも挙動は変わらない)。
+  const trackUsers = isUserTrackingEnabled(segment);
+  const userToggle = !canToggleUserTracking(segment) ? null : el('button', {
+    type: 'button',
+    class: trackUsers ? 'btn-user-toggle on' : 'btn-user-toggle off',
+    'aria-pressed': String(trackUsers),
+    title: trackUsers
+      ? 'ギフト記録時にユーザーを選ぶ設定です(押すと記録しない設定に切り替わります)'
+      : 'ギフト記録時にユーザーを選ばない設定です(押すと記録する設定に切り替わります)',
+    onclick: () => {
+      segment.trackUsers = !trackUsers;
+      save();
+      rerender();
+    },
+  }, trackUsers ? '👤 記録' : '👤 なし');
+
   return el('div', { class: 'segment-card' }, [
+    userToggle,
     link,
     el('div', { class: 'form-row inline' }, [el('label', {}, '日付'), dateInput, renameBtn, deleteBtn]),
   ]);
@@ -132,12 +155,65 @@ function weekdayLabel(dateStr) {
   return WEEKDAY_LABELS[new Date(y, m - 1, d).getDay()];
 }
 
+// 削除された企画に紐づいたまま残っているギフト記録。どの画面にも表示されず集計にも
+// 使われないが、localStorageの容量とテキスト入力時の直列化コストを押し上げ続けるため、
+// 溜まってきたらまとめて片付けられるようにする。
+export function findOrphanGiftLogs(state) {
+  const segmentIds = new Set(state.segments.map((s) => s.id));
+  return state.giftLogs.filter((l) => !segmentIds.has(l.segmentId));
+}
+
+function orphanLogCard({ state, save, rerender }) {
+  const orphans = findOrphanGiftLogs(state);
+  const backupExists = hasBackup();
+  if (orphans.length === 0 && !backupExists) return null;
+
+  const deleteOrphansBtn = orphans.length === 0 ? null : el('button', {
+    type: 'button',
+    class: 'btn-secondary',
+    onclick: async () => {
+      if (!(await showConfirm(`削除済み企画のギフト記録${orphans.length}件を完全に削除します。元に戻せません。\n先にヘッダーの「エクスポート」でバックアップを取ることを推奨します。実行しますか？`))) return;
+      // 残す条件は findOrphanGiftLogs の抽出条件と完全に同じにする。ID一致で消すと、
+      // 旧世代の生成器が作った重複IDが残っている環境で、生きている企画の記録まで
+      // 巻き添えで消えうる(IDの一意性は過去データに対しては保証できない)。
+      const segmentIds = new Set(state.segments.map((s) => s.id));
+      state.giftLogs = state.giftLogs.filter((l) => segmentIds.has(l.segmentId));
+      save();
+      rerender();
+    },
+  }, `不要な記録${orphans.length}件を削除`);
+
+  // インポート前の自動バックアップはstate丸ごとのコピーで、放置すると保存容量を常時圧迫する。
+  // 復元の必要が無くなった時点で消せるようにしておく。
+  const deleteBackupBtn = !backupExists ? null : el('button', {
+    type: 'button',
+    class: 'btn-secondary',
+    onclick: async () => {
+      if (!(await showConfirm('インポート前の自動バックアップを削除します。\nこれはインポートを取り違えた時に元へ戻すための控えです。不要と判断できる場合のみ実行してください。'))) return;
+      clearBackupState();
+      rerender();
+    },
+  }, 'インポート前バックアップを削除');
+
+  return el('div', { class: 'card' }, [
+    el('h3', {}, 'データの整理'),
+    orphans.length
+      ? el('p', { class: 'empty-hint' }, `削除済みの企画に紐づいたギフト記録が${orphans.length}件残っています。表示・集計には使われませんが、保存容量を消費し続けます。`)
+      : null,
+    deleteOrphansBtn,
+    backupExists
+      ? el('p', { class: 'empty-hint' }, 'インポート前の自動バックアップが保存されています(データ1件分の容量を使います)。')
+      : null,
+    deleteBackupBtn,
+  ]);
+}
+
 function promptSegmentType(dateLabel) {
   return showSelect(`${dateLabel}に割り当てる企画の種類を選択`, CREATABLE_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })));
 }
 
 export function renderDashboard({
-  state, save, rerender, container,
+  state, save, saveText = save, rerender, container,
 }) {
   const event = getActiveEvent(state);
   if (!event) {
@@ -151,7 +227,7 @@ export function renderDashboard({
       el('label', {}, 'イベント名'),
       el('input', {
         type: 'text', value: event.name,
-        oninput: (e) => { event.name = e.target.value; save(); },
+        oninput: (e) => { event.name = e.target.value; saveText(); },
       }),
     ]),
     el('div', { class: 'form-row inline' }, [
@@ -169,7 +245,7 @@ export function renderDashboard({
     el('div', { class: 'form-row' }, [
       el('label', {}, 'メモ'),
       el('textarea', {
-        oninput: (e) => { event.memo = e.target.value; save(); },
+        oninput: (e) => { event.memo = e.target.value; saveText(); },
       }, event.memo || ''),
     ]),
   ]);
@@ -225,5 +301,6 @@ export function renderDashboard({
     dates.length
       ? el('div', { class: 'calendar-grid' }, dayCells)
       : el('p', { class: 'empty-hint' }, '上の「期間」を設定するとカレンダーが表示されます。'),
+    orphanLogCard({ state, save, rerender }),
   ]));
 }

@@ -6,6 +6,7 @@ import { createGiftPicker } from './giftPicker.js';
 import { collapsibleSection } from './economyHelpers.js';
 import { showAlert, showConfirm, showPrompt } from './dialogs.js';
 import { segmentNameHeader } from './segmentHeader.js';
+import { userLabel } from './userLabel.js';
 
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key==='shiraPai')を表示する。
@@ -56,13 +57,14 @@ function renderGiftMultiSelect({
 }
 
 export function renderShiraPai({
-  state, save, rerender, container, segmentId,
+  state, save, saveText = save, rerender, container, segmentId,
 }) {
   const segment = findSegment(state, segmentId);
   if (!segment) {
     container.append(el('p', {}, '罰ゲームチャレンジが見つかりません。'));
     return;
   }
+  segment.config.punishments = segment.config.punishments ?? [];
   const punishments = segment.config.punishments;
   segment.config.history = segment.config.history ?? [];
   const history = segment.config.history;
@@ -117,11 +119,10 @@ export function renderShiraPai({
     .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
     .slice(0, 20);
   const giftLogRows = giftLogs.map((l) => {
-    const user = state.users.find((u) => u.id === l.userId);
     const gift = l.giftId ? state.giftMaster.find((g) => g.id === l.giftId) : null;
     return el('tr', {}, [
       el('td', {}, formatDateTime(l.timestamp)),
-      el('td', {}, user ? user.displayName : '(削除済みユーザー)'),
+      el('td', {}, userLabel(state, l.userId)),
       el('td', {}, gift ? gift.name : `直接入力 ${l.points}pt`),
       el('td', {}, `×${l.qty}`),
       el('td', {}, [
@@ -134,7 +135,7 @@ export function renderShiraPai({
             if (l.giftId && segment.config.rouletteGiftIds.includes(l.giftId)) {
               segment.config.spinCredits = Math.max(0, segment.config.spinCredits - l.qty);
             }
-            state.giftLogs = state.giftLogs.filter((x) => x.id !== l.id);
+            state.giftLogs = state.giftLogs.filter((x) => x !== l);
             save();
             rerender();
           },
@@ -162,7 +163,7 @@ export function renderShiraPai({
           title: '削除',
           onclick: async () => {
             if (!(await showConfirm(`「${p.name}」を削除しますか？`))) return;
-            segment.config.punishments = segment.config.punishments.filter((x) => x.id !== p.id);
+            segment.config.punishments = segment.config.punishments.filter((x) => x !== p);
             save();
             rerender();
           },
@@ -241,7 +242,7 @@ export function renderShiraPai({
             if (!(await showConfirm('この履歴を取り消しますか？(該当する罰ゲームの実施回数も-1されます)'))) return;
             const punishment = punishments.find((p) => p.id === entry.punishmentId);
             if (punishment) punishment.count = Math.max(0, punishment.count - 1);
-            segment.config.history = history.filter((h) => h.id !== entry.id);
+            segment.config.history = history.filter((h) => h !== entry);
             save();
             rerender();
           },
@@ -255,7 +256,7 @@ export function renderShiraPai({
   ]);
 
   container.append(el('section', {}, [
-    segmentNameHeader(segment, save),
+    segmentNameHeader(segment, saveText),
     el('div', { class: 'card' }, [
       el('h3', {}, 'ギフト記録'),
       el('p', { class: 'empty-hint' }, 'ここに記録したギフトはユーザーの合計ポイントに反映されます。'),

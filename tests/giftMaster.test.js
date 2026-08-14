@@ -69,28 +69,46 @@ describe('searchGifts', () => {
 describe('moveGiftInCategory', () => {
   it('同カテゴリ内の隣接アイテムと入れ替える(他カテゴリを挟んでいても同カテゴリの隣を見る)', () => {
     const gifts = sampleGifts(); // g1(定番) g2(LOVE) g3(ネタ) g4(ネタ)
-    moveGiftInCategory(gifts, 'g4', -1); // ネタ内でg4をg3より上へ
+    moveGiftInCategory(gifts, gifts.find((x) => x.id === 'g4'), -1); // ネタ内でg4をg3より上へ
     expect(gifts.map((g) => g.id)).toEqual(['g1', 'g2', 'g4', 'g3']);
   });
 
   it('先頭を上へ、末尾を下へ移動しようとしても何も起きない', () => {
     const gifts = sampleGifts();
-    moveGiftInCategory(gifts, 'g1', -1); // 定番はg1のみ
+    moveGiftInCategory(gifts, gifts.find((x) => x.id === 'g1'), -1); // 定番はg1のみ
     expect(gifts.map((g) => g.id)).toEqual(['g1', 'g2', 'g3', 'g4']);
-    moveGiftInCategory(gifts, 'g4', 1); // ネタ内でg4は最後
+    moveGiftInCategory(gifts, gifts.find((x) => x.id === 'g4'), 1); // ネタ内でg4は最後
     expect(gifts.map((g) => g.id)).toEqual(['g1', 'g2', 'g3', 'g4']);
   });
 
   it('searchGifts(sort:manual)と組み合わせると並び替えが表示に反映される', () => {
     const gifts = sampleGifts();
-    moveGiftInCategory(gifts, 'g4', -1);
+    moveGiftInCategory(gifts, gifts.find((x) => x.id === 'g4'), -1);
     const results = searchGifts(gifts, { category: 'ネタ', sort: 'manual' });
     expect(results.map((g) => g.id)).toEqual(['g4', 'g3']);
   });
 
-  it('存在しないidを渡しても例外にならない', () => {
+  it('undefinedを渡しても例外にならない', () => {
     const gifts = sampleGifts();
-    expect(() => moveGiftInCategory(gifts, 'not-exist', 1)).not.toThrow();
+    expect(() => moveGiftInCategory(gifts, undefined, 1)).not.toThrow();
+  });
+
+  // IDで引き直す実装だと、重複IDが残っている既存データで別のギフトを掴んでしまう。
+  // 配列に含まれない要素は、どちらの方向でも配列を壊さないこと。
+  // 特にdirection:1は、ガードが無いとtargetPosが範囲内に収まってしまい、
+  // giftMaster['undefined']への代入で配列が壊れる(direction:-1は既存の範囲チェックで
+  // 早期returnするため、こちらだけではガードの有無を区別できない)。
+  it.each([
+    ['上へ', -1],
+    ['下へ', 1],
+  ])('giftMasterに含まれないオブジェクトは、同じidを持っていても並びを変えない(%s)', (_label, direction) => {
+    const gifts = sampleGifts();
+    const before = gifts.map((g) => g.id);
+    const stranger = { id: 'g4', name: '別配列の同IDギフト', category: 'ネタ' };
+
+    expect(() => moveGiftInCategory(gifts, stranger, direction)).not.toThrow();
+    expect(gifts.map((g) => g.id)).toEqual(before);
+    expect(gifts).toHaveLength(before.length);
   });
 });
 

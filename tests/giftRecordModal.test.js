@@ -17,11 +17,14 @@ function setupDom() {
   document.body.innerHTML = '<div id="modal-root"></div>';
 }
 
+// 記録先のsegmentは、モーダルが「ユーザーを記録するか」を引くために必ず必要
+// (trackUsers未指定 = 従来どおりユーザーを記録する)。
 function baseState() {
   return {
     users: [{ id: 'u1', displayName: 'テストユーザー' }],
     giftMaster: [],
     giftLogs: [],
+    segments: [{ id: 'seg1', type: 'counter', config: {} }],
   };
 }
 
@@ -369,5 +372,122 @@ describe('openGiftRecordModal', () => {
     });
 
     expect(document.querySelector('#grm-user').value).toBe('u1');
+  });
+});
+
+describe('openGiftRecordModal のユーザー記録オフ', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    showAlert.mockResolvedValue(undefined);
+    setupDom();
+  });
+
+  function stateWithTrackingOff() {
+    const state = baseState();
+    state.segments[0].trackUsers = false;
+    state.giftMaster = [{ id: 'gift-1', name: 'しらすまん', points: 200, category: '定番' }];
+    return state;
+  }
+
+  it('ユーザー選択欄と新規追加欄を描画せず、記録しない旨を表示する', () => {
+    openGiftRecordModal({
+      state: stateWithTrackingOff(), segmentId: 'seg1', save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    expect(document.querySelector('#grm-user')).toBeNull();
+    expect([...document.querySelectorAll('input')].some((i) => i.placeholder === '新規ユーザー名')).toBe(false);
+    expect(document.querySelector('#modal-root').textContent).toContain('ユーザーを記録しない設定です');
+  });
+
+  it('ユーザー未選択でもアラートを出さずに記録でき、記録のuserIdはnullになる', async () => {
+    const state = stateWithTrackingOff();
+    // 既存ログを1件仕込む。onSavedに渡るのが「今回追加した分」だけであることを、
+    // state.giftLogs全体と区別できる形で確かめるため(呼び出し側はこの配列だけを見て
+    // カウントやカテゴリ残数へ加算するので、全件が渡ると二重加算になる)。
+    state.giftLogs.push({
+      id: 'log-old', segmentId: 'seg1', userId: null, giftId: 'gift-1', points: 200, qty: 5, timestamp: '2026-08-18T09:00:00.000Z',
+    });
+    const save = vi.fn();
+    const onSaved = vi.fn();
+
+    openGiftRecordModal({
+      state, segmentId: 'seg1', save, onSaved,
+    });
+    findGiftChip('しらすまん (200pt)').click();
+    clickCartSaveButton();
+    await flush();
+
+    expect(showAlert).not.toHaveBeenCalled();
+    expect(state.giftLogs).toHaveLength(2);
+    const added = state.giftLogs.find((l) => l.id !== 'log-old');
+    expect(added.userId).toBeNull();
+    expect(added.giftId).toBe('gift-1');
+    expect(save).toHaveBeenCalled();
+    expect(onSaved).toHaveBeenCalledWith(null, [added]);
+  });
+
+  // lockGiftId経路(パネル開けの条件からの記録)はカート方式と別の保存分岐を通るため、
+  // どちらの経路でもユーザー未選択で記録できることを確かめる。
+  it('lockGiftId指定の記録経路でもユーザー未選択で記録できる', async () => {
+    const state = stateWithTrackingOff();
+    openGiftRecordModal({
+      state, segmentId: 'seg1', conditionId: 'cond1', lockGiftId: 'gift-1', save: vi.fn(), onSaved: vi.fn(),
+    });
+    clickSaveButton();
+    await flush();
+
+    expect(showAlert).not.toHaveBeenCalled();
+    expect(state.giftLogs).toHaveLength(1);
+    expect(state.giftLogs[0].userId).toBeNull();
+  });
+
+  // モード切替はモーダル全体を作り直す経路で、その際に現在の選択値を#grm-userから
+  // 退避しようとする。ユーザー選択欄を描画していない状態でこの退避を無防備に行うと
+  // TypeErrorでモーダルが操作不能になる。カート方式のギフト追加やlockGiftId経路は
+  // この再描画を通らない(前者は再描画せず、後者はモード切替ボタン自体が出ない)ため、
+  // ここを通す唯一の経路として明示的に確かめる。
+  it('ユーザー選択欄が無い状態でモードを切り替えても、再描画が最後まで通る', () => {
+    const state = stateWithTrackingOff();
+    openGiftRecordModal({
+      state, segmentId: 'seg1', save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    const modeBtn = [...document.querySelectorAll('button')].find((b) => b.textContent === 'ポイント直接入力');
+    expect(modeBtn).toBeTruthy();
+    modeBtn.click();
+
+    // 再描画の完了は、ポイント入力欄が出現したかどうかだけで判定する。
+    // ガードが無いと再描画がTypeErrorで中断し、ギフト選択モードのDOMが残るため、
+    // #grm-pointsがnullのままになる。
+    //
+    // 「例外が飛ばないこと」を直接見てはいけない。jsdomはイベントリスナー内で投げられた
+    // 例外をclick()の呼び出し元へ再スローしないため、expect(...).not.toThrow()は
+    // ガードを外しても素通りする(実測で確認済み)。
+    // 同じ理由で「#grm-userが無いこと」も検証にならない。ユーザー選択欄は再描画が
+    // 中断してもしなくても存在しないので、どちらの分岐でも真になってしまう。
+    expect(document.querySelector('#grm-points')).not.toBeNull();
+  });
+
+  // 買い物orガチャ枠はポイント残高がuserId基準で集計されるため、trackUsers:falseが
+  // 書き込まれていてもユーザー選択を出し続ける必要がある。
+  it('買い物orガチャ枠ではtrackUsers:falseでもユーザー選択欄を出す', () => {
+    const state = stateWithTrackingOff();
+    state.segments[0].type = 'shopGacha';
+
+    openGiftRecordModal({
+      state, segmentId: 'seg1', save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    expect(document.querySelector('#grm-user')).not.toBeNull();
+  });
+
+  it('記録先segmentが見つからない場合は従来どおりユーザー選択を要求する', () => {
+    const state = stateWithTrackingOff();
+
+    openGiftRecordModal({
+      state, segmentId: 'seg-unknown', save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    expect(document.querySelector('#grm-user')).not.toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import { genId } from '../id.js';
 import { touchGiftUsage } from '../giftMaster.js';
 import { createGiftPicker } from './giftPicker.js';
 import { showAlert } from './dialogs.js';
+import { isUserTrackingEnabled } from '../storage.js';
 
 const modalRoot = () => document.getElementById('modal-root');
 
@@ -10,6 +11,10 @@ export function openGiftRecordModal({
   state, segmentId, conditionId = null, lockGiftId = null, initialUserId = '', save, onSaved,
 }) {
   const root = modalRoot();
+  // ユーザーを記録するかは記録先の企画の設定に従うため、呼び出し側から渡させずここで引く。
+  // segmentが見つからない場合は従来どおり記録あり(安全側)にする。
+  const segment = state.segments.find((s) => s.id === segmentId);
+  const trackUsers = segment ? isUserTrackingEnabled(segment) : true;
   let mode = 'gift'; // 'gift' | 'points'
   let selectedGiftId = lockGiftId; // lockGiftId時のみ使う単一選択
   let qty = 1; // lockGiftId時・ポイント直接入力時のみ使う個数
@@ -96,7 +101,7 @@ export function openGiftRecordModal({
 
     clear(root);
 
-    const userSelect = el('select', { id: 'grm-user' }, [
+    const userSelect = !trackUsers ? null : el('select', { id: 'grm-user' }, [
       el('option', { value: '', selected: selectedUserId === '' }, '選択してください'),
       ...state.users.map((u) => el('option', { value: u.id, selected: u.id === selectedUserId }, u.displayName)),
     ]);
@@ -177,8 +182,9 @@ export function openGiftRecordModal({
       type: 'button',
       class: 'btn-primary',
       onclick: async () => {
-        const userId = root.querySelector('#grm-user').value;
-        if (!userId) { await showAlert('ユーザーを選択してください'); return; }
+        // ユーザーを記録しない企画では選択欄自体を描画していないため、DOMを読まずnullで確定する。
+        const userId = trackUsers ? root.querySelector('#grm-user').value : null;
+        if (trackUsers && !userId) { await showAlert('ユーザーを選択してください'); return; }
 
         if (isCartMode && mode === 'gift') {
           if (cart.length === 0) { await showAlert('ギフトを選択してください'); return; }
@@ -244,8 +250,9 @@ export function openGiftRecordModal({
         el('h3', {}, 'ギフト記録'),
         el('button', { type: 'button', class: 'btn-close', onclick: close }, '×'),
       ]),
-      el('div', { class: 'form-row' }, [el('label', {}, 'ユーザー'), userSelect]),
-      el('div', { class: 'form-row inline' }, [newUserInput, addUserBtn]),
+      trackUsers ? el('div', { class: 'form-row' }, [el('label', {}, 'ユーザー'), userSelect]) : null,
+      trackUsers ? el('div', { class: 'form-row inline' }, [newUserInput, addUserBtn]) : null,
+      trackUsers ? null : el('p', { class: 'empty-hint' }, 'この企画はユーザーを記録しない設定です。記録にユーザー名は残りません。'),
       modeToggle,
       pickerSection,
       qtyRow,
