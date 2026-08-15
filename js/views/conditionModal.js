@@ -109,7 +109,7 @@ export function openConditionModal({ state, save, item, onSaved }) {
     const box = el('div', { class: 'modal-box' }, [
       el('div', { class: 'modal-header' }, [
         el('h3', {}, `「${item.name}」に条件を追加`),
-        el('button', { type: 'button', class: 'btn-close', onclick: close }, '×'),
+        el('button', { type: 'button', class: 'btn-close', title: '閉じる', 'aria-label': '閉じる', onclick: close }, '×'),
       ]),
       el('div', { class: 'form-row' }, [el('label', {}, '条件の種類'), kindToggle]),
       el('div', { class: 'form-row' }, [el('label', {}, '条件名'), labelInput]),

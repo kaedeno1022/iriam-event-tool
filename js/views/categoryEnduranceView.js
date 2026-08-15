@@ -156,6 +156,7 @@ export function renderCategoryEndurance({
           type: 'button',
           class: 'btn-icon',
           title: '取り消し',
+          'aria-label': '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？(対象カテゴリのギフトの場合、残数カウンターも戻します)'))) return;
             if (gift && gift.category === segment.config.category) {
@@ -178,11 +179,15 @@ export function renderCategoryEndurance({
   const countRows = targetGifts.map((g) => {
     const record = giftRecord(g.id);
     const remaining = (record?.initial ?? 0) - (record?.given ?? 0);
-    return el('div', { class: 'card punishment-row' }, [
-      el('span', { class: 'punishment-name' }, `${g.name}${g.points != null ? ` (${g.points}pt)` : ''}`),
-      el('button', { type: 'button', class: 'btn-round', onclick: () => throwGift(g) }, '－'),
-      el('span', { class: remaining < 0 ? 'points-negative punishment-count' : 'punishment-count' }, `残り${remaining}`),
-      el('button', { type: 'button', class: 'btn-round', onclick: () => undoThrow(g.id) }, '＋'),
+    return el('div', { class: 'card list-row' }, [
+      el('span', { class: 'list-row-name' }, `${g.name}${g.points != null ? ` (${g.points}pt)` : ''}`),
+      el('button', {
+        type: 'button', class: 'btn-round', title: '1件投げた記録を追加(残り-1)', 'aria-label': '1件投げた記録を追加(残り-1)', onclick: () => throwGift(g),
+      }, '－'),
+      el('span', { class: remaining < 0 ? 'points-negative list-row-count' : 'list-row-count' }, `残り${remaining}`),
+      el('button', {
+        type: 'button', class: 'btn-round', title: '記録を1件取り消す(残り+1)', 'aria-label': '記録を1件取り消す(残り+1)', onclick: () => undoThrow(g.id),
+      }, '＋'),
     ]);
   });
 
@@ -203,7 +208,7 @@ export function renderCategoryEndurance({
       }),
       el('h3', {}, `${segment.config.category}ギフト記録`),
       el('p', { class: 'empty-hint' }, '投げられたら「－」で残数を減らします。「＋」は直前の記録の取り消しです。'),
-      el('div', { class: 'punishment-list' }, countRows.length ? countRows : [el('p', { class: 'empty-hint' }, `${segment.config.category}カテゴリのギフトがギフトマスタに登録されていません`)]),
+      el('div', { class: 'list-row-group' }, countRows.length ? countRows : [el('p', { class: 'empty-hint' }, `${segment.config.category}カテゴリのギフトがギフトマスタに登録されていません`)]),
       addGiftBtn,
       el('h3', {}, 'ギフトを記録する(ユーザー別)'),
       el('p', { class: 'empty-hint' }, 'ユーザーを指定して記録すると、対象カテゴリのギフトは残数からも自動で減算され、ユーザーの合計ポイントにも反映されます。'),

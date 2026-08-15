@@ -30,7 +30,7 @@ export function renderSetlist({
 
   const doneCount = songs.filter((s) => s.done).length;
 
-  const songRows = songs.map((song, index) => el('div', { class: 'card punishment-row' }, [
+  const songRows = songs.map((song, index) => el('div', { class: 'card list-row' }, [
     el('label', { class: 'checkbox-row' }, [
       el('input', {
         type: 'checkbox',
@@ -45,15 +45,16 @@ export function renderSetlist({
       oninput: (e) => { song.title = e.target.value; saveText(); },
     }),
     el('button', {
-      type: 'button', class: 'btn-icon', title: '上へ', disabled: index === 0, onclick: () => { moveSong(songs, index, -1); save(); rerender(); },
+      type: 'button', class: 'btn-icon', title: '上へ', 'aria-label': '上へ', disabled: index === 0, onclick: () => { moveSong(songs, index, -1); save(); rerender(); },
     }, '↑'),
     el('button', {
-      type: 'button', class: 'btn-icon', title: '下へ', disabled: index === songs.length - 1, onclick: () => { moveSong(songs, index, 1); save(); rerender(); },
+      type: 'button', class: 'btn-icon', title: '下へ', 'aria-label': '下へ', disabled: index === songs.length - 1, onclick: () => { moveSong(songs, index, 1); save(); rerender(); },
     }, '↓'),
     el('button', {
       type: 'button',
       class: 'btn-icon',
       title: '削除',
+      'aria-label': '削除',
       onclick: async () => {
         if (!(await showConfirm(`「${song.title}」をセトリから削除しますか？`))) return;
         segment.config.songs = songs.filter((s) => s !== song);
@@ -80,7 +81,7 @@ export function renderSetlist({
     el('div', { class: 'card' }, [
       el('p', { class: 'empty-hint' }, '曲名を登録し、↑↓で歌う順に並び替えます。歌い終えたら「済み」にチェックしてください。'),
       el('p', {}, `済み ${doneCount} / 全${songs.length}曲`),
-      el('div', { class: 'punishment-list' }, songRows.length ? songRows : [el('p', { class: 'empty-hint' }, 'セトリ未登録')]),
+      el('div', { class: 'list-row-group' }, songRows.length ? songRows : [el('p', { class: 'empty-hint' }, 'セトリ未登録')]),
       addSongBtn,
     ]),
   ]));

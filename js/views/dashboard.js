@@ -1,7 +1,7 @@
 import { el } from '../render.js';
 import {
   getActiveEvent, createSegmentInstance, hasBackup, clearBackupState,
-  canToggleUserTracking, isUserTrackingEnabled,
+  canToggleUserTracking, isUserTrackingEnabled, segmentsOfType,
 } from '../storage.js';
 import { computeSegmentProgress } from './panelOpenView.js';
 import {
@@ -82,6 +82,7 @@ function segmentCard({
     type: 'button',
     class: 'btn-icon',
     title: '企画名を変更',
+    'aria-label': '企画名を変更',
     onclick: async () => {
       const name = await showPrompt('企画名を入力', segment.name);
       if (!name || !name.trim()) return;
@@ -95,6 +96,7 @@ function segmentCard({
     type: 'button',
     class: 'btn-icon',
     title: '削除',
+    'aria-label': '削除',
     onclick: async () => {
       if (!(await showConfirm(`「${segment.name}」を削除しますか？\n(記録済みのギフト記録等は削除されませんが、以後どの画面にも表示されなくなります)`))) return;
       state.segments = state.segments.filter((s) => s !== segment);
@@ -212,6 +214,31 @@ function promptSegmentType(dateLabel) {
   return showSelect(`${dateLabel}に割り当てる企画の種類を選択`, CREATABLE_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] })));
 }
 
+// 一覧表示用に「イベント名 / 企画名 (日付)」の形でコピー元候補を区別する
+// (全イベント横断で選ばせるため、企画名だけでは同名の企画が複数存在しうる)。
+function copyCandidateLabel(state, segment) {
+  const ev = state.events.find((e) => e.id === segment.eventId);
+  const dateLabel = segment.date ?? '日付未設定';
+  return `${ev ? ev.name : '(不明なイベント)'} / ${segment.name} (${dateLabel})`;
+}
+
+// 同typeの既存企画が無ければ選択肢自体を出さず、常に空で作成する(候補ゼロの一覧は無意味なため)。
+// 戻り値: キャンセル→null、選んだ結果→{ copyFromSegmentId, sourceName }(空作成ならcopyFromSegmentId: null)。
+async function pickCopySource(state, type) {
+  const candidates = segmentsOfType(state, type);
+  if (candidates.length === 0) return { copyFromSegmentId: null, sourceName: null };
+
+  const options = [
+    { value: '', label: '空の状態で作成' },
+    ...candidates.map((s) => ({ value: s.id, label: copyCandidateLabel(state, s) })),
+  ];
+  const chosenId = await showSelect('既存の企画の設定をコピーしますか？(品目・確率・目標値等の設定のみ引き継ぎ、記録やカウントは0から始まります)', options);
+  if (chosenId === null) return null; // キャンセル
+  if (chosenId === '') return { copyFromSegmentId: null, sourceName: null };
+  const source = candidates.find((s) => s.id === chosenId);
+  return { copyFromSegmentId: chosenId, sourceName: source ? source.name : null };
+}
+
 export function renderDashboard({
   state, save, saveText = save, rerender, container,
 }) {
@@ -264,10 +291,14 @@ export function renderDashboard({
   async function assignNewSegment(dateStr) {
     const type = await promptSegmentType(dateStr);
     if (type === null) return; // キャンセル
-    const name = await showPrompt('企画名を入力', TYPE_LABELS[type]);
+
+    const copyChoice = await pickCopySource(state, type);
+    if (copyChoice === null) return; // キャンセル
+
+    const name = await showPrompt('企画名を入力', copyChoice.sourceName ?? TYPE_LABELS[type]);
     if (!name || !name.trim()) return;
     const segment = createSegmentInstance(state, {
-      eventId: event.id, type, name: name.trim(), date: dateStr,
+      eventId: event.id, type, name: name.trim(), date: dateStr, copyFromSegmentId: copyChoice.copyFromSegmentId,
     });
     save();
     location.hash = `#/segment/${segment.id}`;

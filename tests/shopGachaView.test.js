@@ -193,7 +193,7 @@ describe('renderShopGacha', () => {
 
       it('✎を押すとモーダルが開き、既存値が初期表示され、保存すると同じオブジェクトが更新される', async () => {
         await clickByText(container, 'button', '▼ 特典一覧を編集');
-        const row = [...container.querySelectorAll('.punishment-row')].find((r) => r.textContent.includes('オムライスらくがき'));
+        const row = [...container.querySelectorAll('.list-row')].find((r) => r.textContent.includes('オムライスらくがき'));
         row.querySelector('button[title="編集"]').click();
 
         expect(document.querySelector('#stockitem-name').value).toBe('オムライスらくがき');
@@ -368,7 +368,7 @@ describe('renderShopGacha', () => {
         clickModalButton('追加する');
         expect(state.segments[0].config.gacha.prizes.find((p) => p.id === 'prize1').probability).toBe(70);
 
-        const rows = [...container.querySelectorAll('.punishment-row')];
+        const rows = [...container.querySelectorAll('.list-row')];
         const targetRow = rows.find((r) => r.textContent.includes('景品2'));
         showConfirm.mockResolvedValueOnce(true);
         targetRow.querySelector('button[title="削除"]').click();
@@ -414,7 +414,7 @@ describe('renderShopGacha', () => {
       }
 
       function editPrizeByName(name) {
-        const rows = [...container.querySelectorAll('.punishment-row')];
+        const rows = [...container.querySelectorAll('.list-row')];
         const targetRow = rows.find((r) => r.textContent.includes(name));
         targetRow.querySelector('button[title="編集"]').click();
       }

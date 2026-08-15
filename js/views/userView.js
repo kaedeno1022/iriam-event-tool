@@ -60,6 +60,7 @@ export function renderUsers({
           type: 'button',
           class: 'btn-icon',
           title: '削除',
+          'aria-label': '削除',
           onclick: async () => {
             if (!(await showConfirm(`「${user.displayName}」を削除しますか？(記録済みギフト履歴は残ります)`))) return;
             state.users = state.users.filter((u) => u !== user);

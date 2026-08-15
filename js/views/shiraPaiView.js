@@ -39,10 +39,10 @@ function renderGiftMultiSelect({
   state, save, rerender, ids, onAdd, onRemove,
 }) {
   const chips = ids.length
-    ? el('div', { class: 'punishment-list' }, ids.map((giftId) => el('div', { class: 'card punishment-row' }, [
-      el('span', { class: 'punishment-name' }, giftName(state, giftId)),
+    ? el('div', { class: 'list-row-group' }, ids.map((giftId) => el('div', { class: 'card list-row' }, [
+      el('span', { class: 'list-row-name' }, giftName(state, giftId)),
       el('button', {
-        type: 'button', class: 'btn-icon', title: '対象から外す', onclick: () => { onRemove(giftId); save(); rerender(); },
+        type: 'button', class: 'btn-icon', title: '対象から外す', 'aria-label': '対象から外す', onclick: () => { onRemove(giftId); save(); rerender(); },
       }, '✕'),
     ])))
     : el('p', { class: 'empty-hint' }, '対象ギフト未設定');
@@ -130,6 +130,7 @@ export function renderShiraPai({
           type: 'button',
           class: 'btn-icon',
           title: '取り消し',
+          'aria-label': '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？(ルーレット加算対象ギフトの場合、残り回数も戻します)'))) return;
             if (l.giftId && segment.config.rouletteGiftIds.includes(l.giftId)) {
@@ -152,15 +153,20 @@ export function renderShiraPai({
     p.giftIds = p.giftIds ?? [];
     const giftOpen = targetGiftSettingsOpenByPunishmentId.get(p.id) ?? false;
     return el('div', { class: 'card' }, [
-      el('div', { class: 'punishment-row' }, [
-        el('span', { class: 'punishment-name' }, p.giftIds.length ? `${p.name}(対象: ${p.giftIds.map((id) => giftName(state, id)).join('、')})` : p.name),
-        el('button', { type: 'button', class: 'btn-round', onclick: () => { p.count = Math.max(0, p.count - 1); save(); rerender(); } }, '－'),
-        el('span', { class: 'punishment-count' }, String(p.count)),
-        el('button', { type: 'button', class: 'btn-round', onclick: () => { p.count += 1; save(); rerender(); } }, '＋'),
+      el('div', { class: 'list-row' }, [
+        el('span', { class: 'list-row-name' }, p.giftIds.length ? `${p.name}(対象: ${p.giftIds.map((id) => giftName(state, id)).join('、')})` : p.name),
+        el('button', {
+          type: 'button', class: 'btn-round', title: '実施回数を減らす', 'aria-label': '実施回数を減らす', onclick: () => { p.count = Math.max(0, p.count - 1); save(); rerender(); },
+        }, '－'),
+        el('span', { class: 'list-row-count' }, String(p.count)),
+        el('button', {
+          type: 'button', class: 'btn-round', title: '実施回数を増やす', 'aria-label': '実施回数を増やす', onclick: () => { p.count += 1; save(); rerender(); },
+        }, '＋'),
         el('button', {
           type: 'button',
           class: 'btn-icon',
           title: '削除',
+          'aria-label': '削除',
           onclick: async () => {
             if (!(await showConfirm(`「${p.name}」を削除しますか？`))) return;
             segment.config.punishments = segment.config.punishments.filter((x) => x !== p);
@@ -200,10 +206,10 @@ export function renderShiraPai({
   }, '＋ 罰ゲームを追加');
 
   const creditsMinus = el('button', {
-    type: 'button', class: 'btn-round', onclick: () => { segment.config.spinCredits = Math.max(0, segment.config.spinCredits - 1); save(); rerender(); },
+    type: 'button', class: 'btn-round', title: 'ルーレット権を減らす', 'aria-label': 'ルーレット権を減らす', onclick: () => { segment.config.spinCredits = Math.max(0, segment.config.spinCredits - 1); save(); rerender(); },
   }, '－');
   const creditsPlus = el('button', {
-    type: 'button', class: 'btn-round', onclick: () => { segment.config.spinCredits += 1; save(); rerender(); },
+    type: 'button', class: 'btn-round', title: 'ルーレット権を増やす', 'aria-label': 'ルーレット権を増やす', onclick: () => { segment.config.spinCredits += 1; save(); rerender(); },
   }, '＋');
 
   const rouletteBtn = el('button', {
@@ -238,6 +244,7 @@ export function renderShiraPai({
           type: 'button',
           class: 'btn-icon',
           title: '取り消し',
+          'aria-label': '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この履歴を取り消しますか？(該当する罰ゲームの実施回数も-1されます)'))) return;
             const punishment = punishments.find((p) => p.id === entry.punishmentId);
@@ -271,13 +278,13 @@ export function renderShiraPai({
       el('div', { class: 'form-row inline' }, [
         el('label', {}, '残り回数'),
         creditsMinus,
-        el('span', { class: 'punishment-count' }, String(segment.config.spinCredits)),
+        el('span', { class: 'list-row-count' }, String(segment.config.spinCredits)),
         creditsPlus,
       ]),
       rouletteBtn,
     ]),
     el('h3', {}, '罰ゲーム一覧'),
-    el('div', { class: 'punishment-list' }, rows.length ? rows : [el('p', { class: 'empty-hint' }, '罰ゲーム未登録')]),
+    el('div', { class: 'list-row-group' }, rows.length ? rows : [el('p', { class: 'empty-hint' }, '罰ゲーム未登録')]),
     addBtn,
     el('h3', {}, 'ルーレット履歴'),
     historyTable,

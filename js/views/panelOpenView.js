@@ -63,6 +63,7 @@ function renderConditionRow({
     type: 'button',
     class: 'btn-icon',
     title: '削除',
+    'aria-label': '削除',
     onclick: async () => {
       if (!(await showConfirm(`条件「${condition.label}」を削除しますか？`))) return;
       segment.config.conditions = segment.config.conditions.filter((c) => c !== condition);
@@ -109,6 +110,8 @@ function renderConditionRow({
     const minusBtn = el('button', {
       type: 'button',
       class: 'btn-round',
+      title: 'カウントを減らす',
+      'aria-label': 'カウントを減らす',
       onclick: () => { condition.current = Math.max(0, condition.current - 1); save(); rerender(); },
     }, '－');
     const counterInput = el('input', {
@@ -129,6 +132,8 @@ function renderConditionRow({
     const plusBtn = el('button', {
       type: 'button',
       class: 'btn-round',
+      title: 'カウントを増やす',
+      'aria-label': 'カウントを増やす',
       onclick: () => { condition.current += 1; save(); rerender(); },
     }, '＋');
 
@@ -244,6 +249,7 @@ export function renderPanelOpen({
           type: 'button',
           class: 'btn-icon',
           title: '個数を編集',
+          'aria-label': '個数を編集',
           onclick: async () => {
             const newQtyStr = await showPrompt('新しい個数を入力', String(l.qty));
             if (newQtyStr === null) return;
@@ -258,6 +264,7 @@ export function renderPanelOpen({
           type: 'button',
           class: 'btn-icon',
           title: '取り消し',
+          'aria-label': '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？'))) return;
             state.giftLogs = state.giftLogs.filter((x) => x !== l);

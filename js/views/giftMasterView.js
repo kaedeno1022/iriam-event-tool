@@ -53,10 +53,10 @@ export function renderGiftMaster({
         })),
         el('td', {}, String(g.useCount)),
         el('td', { class: 'gift-master-actions' }, [
-          el('button', { type: 'button', class: 'btn-icon', title: '上へ', onclick: () => { moveGiftInCategory(state.giftMaster, g, -1); save(); renderList(); } }, '↑'),
-          el('button', { type: 'button', class: 'btn-icon', title: '下へ', onclick: () => { moveGiftInCategory(state.giftMaster, g, 1); save(); renderList(); } }, '↓'),
+          el('button', { type: 'button', class: 'btn-icon', title: '上へ', 'aria-label': '上へ', onclick: () => { moveGiftInCategory(state.giftMaster, g, -1); save(); renderList(); } }, '↑'),
+          el('button', { type: 'button', class: 'btn-icon', title: '下へ', 'aria-label': '下へ', onclick: () => { moveGiftInCategory(state.giftMaster, g, 1); save(); renderList(); } }, '↓'),
           el('button', {
-            type: 'button', class: 'btn-icon', title: '削除',
+            type: 'button', class: 'btn-icon', title: '削除', 'aria-label': '削除',
             onclick: async () => {
               if (!(await showConfirm(`「${g.name}」を削除しますか？`))) return;
               state.giftMaster = state.giftMaster.filter((x) => x !== g);

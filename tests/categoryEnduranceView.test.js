@@ -46,7 +46,7 @@ function openCollapsible(container, label) {
 }
 
 function findCountRow(container, text) {
-  return [...container.querySelectorAll('.punishment-row')]
+  return [...container.querySelectorAll('.list-row')]
     .filter((row) => !row.closest('.collapsible'))
     .find((row) => [...row.querySelectorAll('span')].some((el) => el.textContent === text));
 }
@@ -184,7 +184,7 @@ describe('renderCategoryEndurance', () => {
       state.giftMaster.push({ id: 'gift-1', name: 'あふれる想い', points: 30000, category: 'LOVE', lastUsedAt: null, useCount: 0, custom: false });
       rerender();
 
-      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       expect(findByText(row, 'span', '残り0')).toBeTruthy();
     });
 
@@ -193,12 +193,12 @@ describe('renderCategoryEndurance', () => {
       state.segments[0].config.giftCounts.push({ id: 'lg1', giftId: 'gift-1', initial: 3, given: 0 });
       rerender();
 
-      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       findByText(row, 'button', '－').click();
 
       const record = state.segments[0].config.giftCounts.find((r) => r.giftId === 'gift-1');
       expect(record.given).toBe(1);
-      const updatedRow = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const updatedRow = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       expect(findByText(updatedRow, 'span', '残り2')).toBeTruthy();
     });
 
@@ -207,10 +207,10 @@ describe('renderCategoryEndurance', () => {
       state.segments[0].config.giftCounts.push({ id: 'lg1', giftId: 'gift-1', initial: 0, given: 0 });
       rerender();
 
-      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       findByText(row, 'button', '－').click();
 
-      const updatedRow = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const updatedRow = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       const countEl = findByText(updatedRow, 'span', '残り-1');
       expect(countEl).toBeTruthy();
       expect(countEl.classList.contains('points-negative')).toBe(true);
@@ -221,7 +221,7 @@ describe('renderCategoryEndurance', () => {
       state.segments[0].config.giftCounts.push({ id: 'lg1', giftId: 'gift-1', initial: 3, given: 2 });
       rerender();
 
-      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       findByText(row, 'button', '＋').click();
 
       const record = state.segments[0].config.giftCounts.find((r) => r.giftId === 'gift-1');
@@ -232,7 +232,7 @@ describe('renderCategoryEndurance', () => {
       state.giftMaster.push({ id: 'gift-1', name: 'あふれる想い', points: 30000, category: 'LOVE', lastUsedAt: null, useCount: 0, custom: false });
       rerender();
 
-      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.punishment-row');
+      const row = findByText(container, 'span', 'あふれる想い (30000pt)').closest('.list-row');
       findByText(row, 'button', '＋').click();
 
       expect(state.segments[0].config.giftCounts).toHaveLength(0);

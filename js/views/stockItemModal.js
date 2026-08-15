@@ -64,7 +64,7 @@ export function openStockItemModal({
     const box = el('div', { class: 'modal-box' }, [
       el('div', { class: 'modal-header' }, [
         el('h3', {}, isEdit ? `${kind}を編集` : `${kind}を追加`),
-        el('button', { type: 'button', class: 'btn-close', onclick: close }, '×'),
+        el('button', { type: 'button', class: 'btn-close', title: '閉じる', 'aria-label': '閉じる', onclick: close }, '×'),
       ]),
       el('div', { class: 'form-row' }, [el('label', {}, `${kind}名`), nameInput]),
       el('div', { class: 'form-row' }, [el('label', {}, '必要ポイント(空欄で不明)'), pointsInput]),

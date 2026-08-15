@@ -187,6 +187,82 @@ describe('renderDashboard', () => {
     expect(state.segments).toHaveLength(0);
   });
 
+  it('同typeの既存企画が無ければコピー元選択ダイアログを出さず、従来通り空configで作成する', async () => {
+    showSelect.mockResolvedValueOnce('shiraPai'); // 種類選択のみ。コピー元候補が無いので2回目は呼ばれないはず
+    showPrompt.mockResolvedValueOnce('新規の罰ゲーム');
+
+    const day18 = [...container.querySelectorAll('.calendar-day')].find((c) => c.textContent.includes('2026-08-18'));
+    clickByText(day18, 'button', '＋ 企画を割り当て');
+    await flush();
+
+    expect(showSelect).toHaveBeenCalledTimes(1);
+    expect(state.segments).toHaveLength(1);
+    expect(state.segments[0].config).toEqual({ punishments: [], history: [] });
+  });
+
+  it('同typeの既存企画がある時「空の状態で作成」を選ぶと従来通り空configになる', async () => {
+    state.segments.push({
+      id: 'seg-existing', eventId: 'event1', type: 'shiraPai', key: null, name: '既存の罰ゲーム', date: '2026-08-18', config: { punishments: [{ id: 'p1', name: '足つぼ', count: 3, giftIds: [] }], history: [] },
+    });
+    rerender();
+
+    showSelect.mockResolvedValueOnce('shiraPai');
+    showSelect.mockResolvedValueOnce(''); // 「空の状態で作成」
+    showPrompt.mockResolvedValueOnce('別の罰ゲーム');
+
+    const day19 = [...container.querySelectorAll('.calendar-day')].find((c) => c.textContent.includes('2026-08-19'));
+    clickByText(day19, 'button', '＋ 企画を割り当て');
+    await flush();
+
+    const created = state.segments.find((s) => s.name === '別の罰ゲーム');
+    expect(created.config).toEqual({ punishments: [], history: [] });
+  });
+
+  it('コピー元選択ダイアログには全イベント横断で同typeの企画がイベント名付きで並ぶ', async () => {
+    state.events.push({
+      id: 'event2', name: '別イベント', periodStart: '2026-09-01', periodEnd: '2026-09-03', memo: '',
+    });
+    state.segments.push({
+      id: 'seg-existing', eventId: 'event2', type: 'shiraPai', key: null, name: '前回の罰ゲーム', date: '2026-09-01', config: { punishments: [{ id: 'p1', name: '足つぼ', count: 3, giftIds: [] }], history: [] },
+    });
+    rerender();
+
+    showSelect.mockResolvedValueOnce('shiraPai');
+    showSelect.mockResolvedValueOnce('seg-existing');
+    showPrompt.mockResolvedValueOnce('今回の罰ゲーム');
+
+    const day18 = [...container.querySelectorAll('.calendar-day')].find((c) => c.textContent.includes('2026-08-18'));
+    clickByText(day18, 'button', '＋ 企画を割り当て');
+    await flush();
+
+    const [, copySourceCallArgs] = showSelect.mock.calls;
+    const [, options] = copySourceCallArgs;
+    expect(options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: expect.stringContaining('別イベント / 前回の罰ゲーム') }),
+    ]));
+
+    const created = state.segments.find((s) => s.name === '今回の罰ゲーム');
+    expect(created.config.punishments[0]).toMatchObject({ name: '足つぼ', count: 0 });
+    expect(created.config.punishments[0].id).not.toBe('p1');
+  });
+
+  it('コピー元選択ダイアログでキャンセルすると何も作成されない', async () => {
+    state.segments.push({
+      id: 'seg-existing', eventId: 'event1', type: 'shiraPai', key: null, name: '既存の罰ゲーム', date: '2026-08-18', config: { punishments: [], history: [] },
+    });
+    rerender();
+
+    showSelect.mockResolvedValueOnce('shiraPai');
+    showSelect.mockResolvedValueOnce(null); // コピー元選択をキャンセル
+
+    const day19 = [...container.querySelectorAll('.calendar-day')].find((c) => c.textContent.includes('2026-08-19'));
+    clickByText(day19, 'button', '＋ 企画を割り当て');
+    await flush();
+
+    expect(state.segments).toHaveLength(1); // 既存の1件だけ、新規作成はされない
+    expect(showPrompt).not.toHaveBeenCalled();
+  });
+
   it('shopGachaのカードには交換件数・ガチャ件数が表示される', () => {
     state.segments.push({
       id: 'seg1',

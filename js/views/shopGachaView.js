@@ -159,7 +159,7 @@ function renderPointsSection({
       el('td', {}, `×${l.qty}`),
       el('td', {}, [
         el('button', {
-          type: 'button', class: 'btn-icon', title: '取り消し',
+          type: 'button', class: 'btn-icon', title: '取り消し', 'aria-label': '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？'))) return;
             state.giftLogs = state.giftLogs.filter((x) => x !== l);
@@ -226,12 +226,13 @@ function renderShopSection({
 
   const itemRows = items.map((item) => {
     const stock = remainingShopStock(item, log);
-    return el('div', { class: 'card punishment-row' }, [
-      el('span', { class: 'punishment-name' }, `${item.name}${item.requiredPoints != null ? ` (${item.requiredPoints}pt)` : ''} - ${stockLabel(stock)}${item.allowDuplicate ? '' : ' / 被り不可'}`),
+    return el('div', { class: 'card list-row' }, [
+      el('span', { class: 'list-row-name' }, `${item.name}${item.requiredPoints != null ? ` (${item.requiredPoints}pt)` : ''} - ${stockLabel(stock)}${item.allowDuplicate ? '' : ' / 被り不可'}`),
       el('button', {
         type: 'button',
         class: 'btn-icon',
         title: '編集',
+        'aria-label': '編集',
         onclick: () => openStockItemModal({
           items, item, kind: '特典', save, onSaved: rerender,
         }),
@@ -240,6 +241,7 @@ function renderShopSection({
         type: 'button',
         class: 'btn-icon',
         title: '削除',
+        'aria-label': '削除',
         onclick: async () => {
           if (!(await showConfirm(`「${item.name}」を削除しますか？`))) return;
           segment.config.shopItems = segment.config.shopItems.filter((x) => x !== item);
@@ -263,7 +265,7 @@ function renderShopSection({
     el('td', {}, entry.itemName),
     el('td', {}, [
       el('button', {
-        type: 'button', class: 'btn-icon', title: '取り消し',
+        type: 'button', class: 'btn-icon', title: '取り消し', 'aria-label': '取り消し',
         onclick: async () => {
           if (!(await showConfirm('この交換記録を取り消しますか？'))) return;
           segment.config.shopLog = log.filter((h) => h !== entry);
@@ -281,7 +283,7 @@ function renderShopSection({
       isOpen: ui.shopCatalogOpen,
       onToggle: () => { ui.shopCatalogOpen = !ui.shopCatalogOpen; rerender(); },
       content: el('div', {}, [
-        el('div', { class: 'punishment-list' }, itemRows.length ? itemRows : [el('p', { class: 'empty-hint' }, '特典未登録')]),
+        el('div', { class: 'list-row-group' }, itemRows.length ? itemRows : [el('p', { class: 'empty-hint' }, '特典未登録')]),
         addItemBtn,
       ]),
     }),
@@ -394,12 +396,13 @@ function renderGachaSection({
         : el('p', { class: 'empty-hint' }, '確定枠に設定された景品がありません'),
     ]);
 
-  const tierRows = gacha.rateTiers.map((tier) => el('div', { class: 'card punishment-row' }, [
-    el('span', { class: 'punishment-name' }, `${tier.points}ptで${tier.draws}回分`),
+  const tierRows = gacha.rateTiers.map((tier) => el('div', { class: 'card list-row' }, [
+    el('span', { class: 'list-row-name' }, `${tier.points}ptで${tier.draws}回分`),
     el('button', {
       type: 'button',
       class: 'btn-icon',
       title: '削除',
+      'aria-label': '削除',
       onclick: async () => {
         if (!(await showConfirm('このレートを削除しますか？'))) return;
         gacha.rateTiers = gacha.rateTiers.filter((x) => x !== tier);
@@ -426,12 +429,13 @@ function renderGachaSection({
 
   const prizeRows = gacha.prizes.map((prize) => {
     const stock = remainingPrizeStock(prize, log);
-    return el('div', { class: 'card punishment-row' }, [
-      el('span', { class: 'punishment-name' }, `${prize.name}(${probabilityOf(prize)}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
+    return el('div', { class: 'card list-row' }, [
+      el('span', { class: 'list-row-name' }, `${prize.name}(${probabilityOf(prize)}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
       el('button', {
         type: 'button',
         class: 'btn-icon',
         title: '編集',
+        'aria-label': '編集',
         onclick: () => openPrizeModal({
           prizes: gacha.prizes, prize, save, onSaved: rerender,
         }),
@@ -440,6 +444,7 @@ function renderGachaSection({
         type: 'button',
         class: 'btn-icon',
         title: '削除',
+        'aria-label': '削除',
         onclick: async () => {
           if (!(await showConfirm(`「${prize.name}」を削除しますか？`))) return;
           gacha.prizes = gacha.prizes.filter((x) => x !== prize);
@@ -485,12 +490,13 @@ function renderGachaSection({
     },
   }, '＋ お買い物からコピー');
 
-  const grantRows = grants.map((grant) => el('div', { class: 'card punishment-row' }, [
-    el('span', { class: 'punishment-name' }, `${userLabel(state, grant.userId)} に${grant.count}回付与(${formatDateTime(grant.timestamp)})`),
+  const grantRows = grants.map((grant) => el('div', { class: 'card list-row' }, [
+    el('span', { class: 'list-row-name' }, `${userLabel(state, grant.userId)} に${grant.count}回付与(${formatDateTime(grant.timestamp)})`),
     el('button', {
       type: 'button',
       class: 'btn-icon',
       title: '取り消し',
+      'aria-label': '取り消し',
       onclick: async () => {
         if (!(await showConfirm('この付与を取り消しますか？'))) return;
         segment.config.freeDrawGrants = grants.filter((g) => g !== grant);
@@ -563,7 +569,7 @@ function renderGachaSection({
   ]));
   const streamPostChecklist = el('div', {}, [
     el('h4', {}, '配信ポスト実施済みユーザー'),
-    streamPostChecklistRows.length ? el('div', { class: 'punishment-list' }, streamPostChecklistRows) : el('p', { class: 'empty-hint' }, 'ユーザー未登録'),
+    streamPostChecklistRows.length ? el('div', { class: 'list-row-group' }, streamPostChecklistRows) : el('p', { class: 'empty-hint' }, 'ユーザー未登録'),
   ]);
 
   const holdings = holdingsByUser(log);
@@ -579,7 +585,7 @@ function renderGachaSection({
     el('td', {}, MODE_LABEL[entry.mode] ?? entry.mode),
     el('td', {}, [
       el('button', {
-        type: 'button', class: 'btn-icon', title: '取り消し',
+        type: 'button', class: 'btn-icon', title: '取り消し', 'aria-label': '取り消し',
         onclick: async () => {
           if (!(await showConfirm('この結果を取り消しますか？'))) return;
           segment.config.gachaLog = log.filter((h) => h !== entry);
@@ -606,7 +612,7 @@ function renderGachaSection({
       isOpen: ui.gachaTierCatalogOpen,
       onToggle: () => { ui.gachaTierCatalogOpen = !ui.gachaTierCatalogOpen; rerender(); },
       content: el('div', {}, [
-        el('div', { class: 'punishment-list' }, tierRows.length ? tierRows : [el('p', { class: 'empty-hint' }, 'レート未設定')]),
+        el('div', { class: 'list-row-group' }, tierRows.length ? tierRows : [el('p', { class: 'empty-hint' }, 'レート未設定')]),
         addTierBtn,
       ]),
     }),
@@ -615,7 +621,7 @@ function renderGachaSection({
       isOpen: ui.gachaCatalogOpen,
       onToggle: () => { ui.gachaCatalogOpen = !ui.gachaCatalogOpen; rerender(); },
       content: el('div', {}, [
-        el('div', { class: 'punishment-list' }, prizeRows.length ? prizeRows : [el('p', { class: 'empty-hint' }, '景品未登録')]),
+        el('div', { class: 'list-row-group' }, prizeRows.length ? prizeRows : [el('p', { class: 'empty-hint' }, '景品未登録')]),
         addPrizeBtn,
         copyFromShopBtn,
       ]),
@@ -625,7 +631,7 @@ function renderGachaSection({
       isOpen: ui.freeGrantCatalogOpen,
       onToggle: () => { ui.freeGrantCatalogOpen = !ui.freeGrantCatalogOpen; rerender(); },
       content: el('div', {}, [
-        el('div', { class: 'punishment-list' }, grantRows.length ? grantRows : [el('p', { class: 'empty-hint' }, '付与履歴なし')]),
+        el('div', { class: 'list-row-group' }, grantRows.length ? grantRows : [el('p', { class: 'empty-hint' }, '付与履歴なし')]),
         addGrantBtn,
         streamPostGrantBtn,
         streamPostChecklist,

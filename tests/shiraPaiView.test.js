@@ -85,7 +85,7 @@ describe('renderShiraPai', () => {
     state.segments[0].config.punishments.push({ id: 'p1', name: '苦丁茶', count: 0 });
     rerender();
 
-    const row = () => container.querySelector('.punishment-row');
+    const row = () => container.querySelector('.list-row');
     const minusBtn = () => [...row().querySelectorAll('button')].find((b) => b.textContent === '－');
     const plusBtn = () => [...row().querySelectorAll('button')].find((b) => b.textContent === '＋');
 
@@ -210,7 +210,7 @@ describe('renderShiraPai', () => {
     state.segments[0].config.punishments.push({ id: 'p1', name: '足つぼ', count: 0 });
     rerender();
 
-    const plusBtn = () => [...container.querySelector('.punishment-row').querySelectorAll('button')].find((b) => b.textContent === '＋');
+    const plusBtn = () => [...container.querySelector('.list-row').querySelectorAll('button')].find((b) => b.textContent === '＋');
     plusBtn().click();
 
     expect(state.segments[0].config.punishments[0].count).toBe(1);
@@ -232,7 +232,7 @@ describe('renderShiraPai', () => {
   });
 
   it('残り回数の＋/－で手動増減できる(下限0)', () => {
-    const creditsValue = () => container.querySelector('.form-row.inline .punishment-count').textContent;
+    const creditsValue = () => container.querySelector('.form-row.inline .list-row-count').textContent;
     expect(creditsValue()).toBe('0');
 
     const minusBtn = () => [...container.querySelectorAll('.form-row.inline button')].find((b) => b.textContent === '－');

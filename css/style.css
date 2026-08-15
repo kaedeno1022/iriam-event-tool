@@ -8,8 +8,14 @@
   --color-primary-dark: #b5622f;
   --color-accent: #4a90a4;
   --color-success: #4a9a5a;
+  --color-success-bg: #eef8ee;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fdecea;
   --radius: 10px;
   --tap-size: 44px;
+  /* JS側(app.jsのupdateStickyOffsets)が実測値で上書きする。JS実行前の初期表示用フォールバック */
+  --banner-height: 0px;
+  --header-height: 56px;
 }
 
 * { box-sizing: border-box; }
@@ -30,7 +36,8 @@ body {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   position: sticky;
-  top: 0;
+  /* 保存失敗バナー表示中はその高さぶん下にずらす。実測値はapp.jsのupdateStickyOffsetsが書く */
+  top: var(--banner-height);
   z-index: 10;
   flex-wrap: wrap;
   gap: 8px;
@@ -67,7 +74,8 @@ body {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   position: sticky;
-  top: 56px;
+  /* ヘッダーは折り返しで高さが変わりうるため固定値ではなくバナー高さ+ヘッダー実測高さを使う */
+  top: calc(var(--banner-height) + var(--header-height));
   z-index: 9;
 }
 
@@ -251,8 +259,9 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-height: 260px;
-  overflow-y: auto;
+  /* 高さ固定+overflow-yで囲むと、モーダル(.modal-box)内で使われた時に外側のスクロールと
+     二重になり、スマホでは一覧の端に達した瞬間に意図せず外側がスクロールしてしまう。
+     外側(モーダルならmodal-box、通常画面ならページ全体)のスクロール1本に任せる */
   padding: 4px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -369,7 +378,7 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
 }
 .panel-item.achieved {
   border-color: var(--color-success);
-  background: #eef8ee;
+  background: var(--color-success-bg);
 }
 .panel-item-title {
   display: flex;
@@ -412,7 +421,7 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
 }
 .condition-row.achieved {
   border-color: var(--color-success);
-  background: #eef8ee;
+  background: var(--color-success-bg);
 }
 .condition-row-body { flex: 1; min-width: 0; }
 .condition-row-title {
@@ -555,7 +564,15 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
   border-bottom: 1px solid var(--color-border);
 }
 .cart-row-name { flex: 1; font-size: 0.9rem; }
-.cart-row-qty { min-width: 24px; text-align: center; font-weight: 600; }
+/* ±ボタンでの増減に加え、直接入力もできる個数欄(input[type=number])。
+   横一列の他の要素(名前・±・小計・削除)を圧迫しないよう幅を絞る */
+.cart-row-qty {
+  width: 48px;
+  min-height: auto;
+  padding: 6px 2px;
+  text-align: center;
+  font-weight: 600;
+}
 .cart-row-subtotal {
   min-width: 56px;
   text-align: right;
@@ -568,22 +585,24 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
   margin: 8px 0 0;
 }
 
-.punishment-list {
+/* 罰ゲーム画面発祥だが、行形式の一覧を持つ複数画面(お買い物特典・ガチャ景品・レート・
+   カテゴリ耐久・セトリ等)で共通の「行リスト」表現として使う汎用クラス */
+.list-row-group {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin: 12px 0;
 }
-.punishment-row {
+.list-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.punishment-name { flex: 1; font-weight: 600; }
-.punishment-count { min-width: 28px; text-align: center; font-size: 1.1rem; font-weight: 700; }
+.list-row-name { flex: 1; font-weight: 600; }
+.list-row-count { min-width: 28px; text-align: center; font-size: 1.1rem; font-weight: 700; }
 
 .points-negative {
-  color: #b3261e;
+  color: var(--color-danger);
   font-weight: 700;
 }
 .collapsible { margin: 12px 0; }
@@ -593,7 +612,7 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #b3261e;
+  background: var(--color-danger);
   color: #fff;
   padding: 10px 12px;
 }
@@ -607,7 +626,7 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
 }
 .save-error-banner .btn-secondary {
   background: #fff;
-  color: #b3261e;
+  color: var(--color-danger);
   border-color: #fff;
   font-weight: 700;
 }
@@ -616,7 +635,7 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
 .error-screen {
   padding: 16px;
 }
-.error-screen h2 { color: #b3261e; }
+.error-screen h2 { color: var(--color-danger); }
 .error-screen .form-row.inline { flex-wrap: wrap; gap: 8px; }
 
 /* 非公式であることの明示。公開ページなので、公式ツールと誤認されないよう常時表示する */
@@ -637,9 +656,9 @@ progress { width: 100%; height: 12px; border-radius: 6px; }
 .probability-warning {
   margin: 0 0 12px;
   padding: 10px 12px;
-  border: 1px solid #b3261e;
+  border: 1px solid var(--color-danger);
   border-radius: var(--radius);
-  background: #fdecea;
-  color: #b3261e;
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
   font-size: 0.9rem;
 }

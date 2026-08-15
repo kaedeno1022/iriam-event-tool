@@ -105,6 +105,68 @@ function buildShopGachaConfig() {
   };
 }
 
+// --- 企画コピー(既存企画のカタログ設定を引き継いで新規企画を作る) ---
+// 「カタログ」(品目名・確率・目標値等の設定)はそのまま複製し、「状態」(在庫消化数・実施回数・
+// 達成フラグ・記録ログ)は必ずゼロ/空へ戻す。IDは全て再採番する(使い回すと、過去のギフト記録が
+// giftId一致だけでなくconditionId等の一致でも新しい企画側の集計に紛れ込んでしまうため)。
+
+function cloneConditions(conditions) {
+  return (conditions ?? []).map((c) => {
+    const clone = { id: genId('cond'), kind: c.kind, label: c.label };
+    if (c.target !== undefined) clone.target = c.target;
+    if (c.giftId !== undefined) clone.giftId = c.giftId;
+    if (c.kind === 'manualCounter') clone.current = 0;
+    // notesはmanualCheck条件のみが持つフィールド(panelOpenView.jsのrenderConditionRow参照)。
+    // 他kindに空配列を付けても実害は無いが、実際に使われるkindだけに絞って形状を実態に合わせる。
+    if (c.kind === 'manualCheck') { clone.achieved = false; clone.notes = []; }
+    return clone;
+  });
+}
+
+function clonePunishments(punishments) {
+  return (punishments ?? []).map((p) => ({
+    id: genId('punishment'), name: p.name, giftIds: [...(p.giftIds ?? [])], count: 0,
+  }));
+}
+
+function cloneShopItems(items) {
+  return (items ?? []).map((item) => ({
+    id: genId('shopitem'), name: item.name, requiredPoints: item.requiredPoints, stock: item.stock, allowDuplicate: item.allowDuplicate,
+  }));
+}
+
+function clonePrizes(prizes) {
+  return (prizes ?? []).map((p) => ({
+    id: genId('prize'), name: p.name, probability: p.probability, stock: p.stock, allowDuplicate: p.allowDuplicate, guaranteedPoints: p.guaranteedPoints,
+  }));
+}
+
+function cloneRateTiers(tiers) {
+  return (tiers ?? []).map((t) => ({ id: genId('tier'), points: t.points, draws: t.draws }));
+}
+
+function cloneGiftCounts(giftCounts) {
+  return (giftCounts ?? []).map((r) => ({
+    id: genId('endgift'), giftId: r.giftId, initial: r.initial, given: 0,
+  }));
+}
+
+function cloneSongs(songs) {
+  return (songs ?? []).map((s) => ({ id: genId('song'), title: s.title, done: false }));
+}
+
+function cloneRules(rules) {
+  return (rules ?? []).map((r) => ({ id: genId('rule'), giftId: r.giftId, delta: r.delta }));
+}
+
+function cloneShopGachaConfig(source) {
+  const config = buildShopGachaConfig();
+  config.shopItems = cloneShopItems(source.shopItems);
+  config.gacha.prizes = clonePrizes(source.gacha?.prizes);
+  config.gacha.rateTiers = cloneRateTiers(source.gacha?.rateTiers);
+  return config;
+}
+
 // 企画typeごとの定義一覧。createSegmentInstance(ダッシュボードの「＋企画を割り当て」)が
 // type別の初期config形状を引くカタログとして使うほか、migrateSegmentsが既存データに残る
 // 旧デフォルト枠(key有り)の名前・日付を後方互換パッチする際の参照元としても使う。
@@ -118,6 +180,7 @@ const SEGMENT_TYPE_DEFS = [
     name: 'パネル開け',
     oldNames: ['パネル明け'],
     buildConfig: () => ({ imageUrl: '', conditions: [] }),
+    cloneConfig: (source) => ({ imageUrl: source.imageUrl ?? '', conditions: cloneConditions(source.conditions) }),
   },
   {
     key: 'shiraPai',
@@ -125,6 +188,12 @@ const SEGMENT_TYPE_DEFS = [
     name: '罰ゲームチャレンジ',
     oldNames: ['しらぱいたらいチャレンジ'],
     buildConfig: () => ({ punishments: [], history: [] }),
+    cloneConfig: (source) => ({
+      punishments: clonePunishments(source.punishments),
+      history: [],
+      spinCredits: 0,
+      rouletteGiftIds: [...(source.rouletteGiftIds ?? [])],
+    }),
   },
   {
     key: 'maidCorner',
@@ -132,6 +201,7 @@ const SEGMENT_TYPE_DEFS = [
     name: 'メイド枠',
     oldNames: [],
     buildConfig: buildShopGachaConfig,
+    cloneConfig: cloneShopGachaConfig,
   },
   {
     key: 'role',
@@ -139,6 +209,7 @@ const SEGMENT_TYPE_DEFS = [
     name: '役職',
     oldNames: [],
     buildConfig: buildShopGachaConfig,
+    cloneConfig: cloneShopGachaConfig,
   },
   {
     key: 'categoryEndurance',
@@ -146,6 +217,7 @@ const SEGMENT_TYPE_DEFS = [
     name: 'カテゴリ耐久',
     oldNames: ['ラブカテ耐久'],
     buildConfig: () => ({ category: 'LOVE', giftCounts: [] }),
+    cloneConfig: (source) => ({ category: source.category ?? 'LOVE', giftCounts: cloneGiftCounts(source.giftCounts) }),
   },
   {
     // 6.7 デジガチャ・ボイスガチャ。メイド枠・役職と同じ買い物orガチャ枠(shopGacha)をそのまま
@@ -156,6 +228,7 @@ const SEGMENT_TYPE_DEFS = [
     name: 'デジガチャ・ボイスガチャ',
     oldNames: [],
     buildConfig: buildShopGachaConfig,
+    cloneConfig: cloneShopGachaConfig,
   },
   {
     // 6.8 ラスラン(セトリ管理)。経済(pt/ガチャ)を持たない単純な順序リスト+実施済みチェックのみ。
@@ -164,6 +237,7 @@ const SEGMENT_TYPE_DEFS = [
     name: 'ラスラン',
     oldNames: [],
     buildConfig: () => ({ songs: [] }),
+    cloneConfig: (source) => ({ songs: cloneSongs(source.songs) }),
   },
   {
     // プラスマイナスカウンター(同接カウンターの汎用化)。手動±操作は他企画から独立するが、
@@ -173,6 +247,7 @@ const SEGMENT_TYPE_DEFS = [
     name: 'カウンター',
     oldNames: ['同接カウンター'],
     buildConfig: () => ({ count: 0, rules: [] }),
+    cloneConfig: (source) => ({ count: 0, rules: cloneRules(source.rules) }),
   },
 ];
 
@@ -349,11 +424,21 @@ export function migrateSegments(state, eventId = state.events[0]?.id) {
 // 日付ベースで新規の企画インスタンスを作成する(ダッシュボードの「＋企画を割り当て」から使う)。
 // 既定企画の概念は廃止したため、keyは常にnull。typeごとの初期config形状はSEGMENT_TYPE_DEFSの
 // buildConfigをそのまま流用する。
+// copyFromSegmentIdを指定すると、そのsegment(同typeであること)のカタログ設定(品目・確率・
+// 目標値等)を複製した状態で作る。在庫消化数・実施回数・達成フラグ・記録ログ等の「状態」は
+// 複製元がどうであれ必ず空/ゼロから始まる(cloneConfig側の責務)。
 export function createSegmentInstance(state, {
-  eventId, type, name, date = null,
+  eventId, type, name, date = null, copyFromSegmentId = null,
 }) {
   const def = SEGMENT_TYPE_DEFS.find((d) => d.type === type);
   if (!def) throw new Error(`未対応の企画タイプ: ${type}`);
+
+  let config = def.buildConfig();
+  if (copyFromSegmentId) {
+    const source = state.segments.find((s) => s.id === copyFromSegmentId);
+    if (source && source.type === type) config = def.cloneConfig(source.config);
+  }
+
   const segment = {
     id: genId('segment'),
     eventId,
@@ -362,10 +447,20 @@ export function createSegmentInstance(state, {
     name,
     order: state.segments.length,
     date,
-    config: def.buildConfig(),
+    config,
   };
   state.segments.push(segment);
   return segment;
+}
+
+// 企画作成時の「既存企画からコピー」で選ばせる候補一覧。全イベント横断で同typeの企画を
+// 新しいもの順(date降順、日付未設定は末尾)に返す。呼び出し側(ダッシュボード)でイベント名と
+// 突き合わせて表示する。
+export function segmentsOfType(state, type) {
+  return state.segments
+    .filter((s) => s.type === type)
+    .slice()
+    .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''));
 }
 
 // 「誰が投げたか」を残す必要のない企画では、ギフト記録のたびにユーザーを選ぶ手間を省く。

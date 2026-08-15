@@ -47,7 +47,7 @@ export function openCounterRuleModal({ state, save, segment, onSaved }) {
     const box = el('div', { class: 'modal-box' }, [
       el('div', { class: 'modal-header' }, [
         el('h3', {}, `「${segment.name}」にルールを追加`),
-        el('button', { type: 'button', class: 'btn-close', onclick: close }, '×'),
+        el('button', { type: 'button', class: 'btn-close', title: '閉じる', 'aria-label': '閉じる', onclick: close }, '×'),
       ]),
       el('div', { class: 'form-row' }, [el('label', {}, '対象ギフト'), giftPicker.element]),
       el('div', { class: 'form-row' }, [el('label', {}, '増減値(マイナス可)'), deltaInput]),

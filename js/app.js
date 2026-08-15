@@ -54,6 +54,33 @@ function currentRoute() {
   return location.hash.replace('#/', '') || 'dashboard';
 }
 
+// --- sticky要素の高さ調整 ---
+// .app-header/.tab-navはposition:stickyで積み重なるが、バナーの表示有無やヘッダーの折り返しで
+// 実際の高さが変わる。固定pxで決め打つとタブナビがヘッダーの下に隠れるため、実測値を
+// CSS変数に書き込んで追従させる(css/style.cssの--banner-height/--header-height側で参照)。
+function updateStickyOffsets() {
+  const banner = document.getElementById('save-error-banner');
+  const header = document.querySelector('.app-header');
+  const bannerHeight = banner && !banner.hidden ? banner.offsetHeight : 0;
+  const headerHeight = header ? header.offsetHeight : 0;
+  document.documentElement.style.setProperty('--banner-height', `${bannerHeight}px`);
+  document.documentElement.style.setProperty('--header-height', `${headerHeight}px`);
+}
+
+function watchStickyOffsets() {
+  updateStickyOffsets();
+  // ResizeObserver未対応環境(jsdomでのテスト実行時など)ではwindowのresizeだけで代用する。
+  if (typeof ResizeObserver === 'undefined') {
+    window.addEventListener('resize', updateStickyOffsets);
+    return;
+  }
+  const banner = document.getElementById('save-error-banner');
+  const header = document.querySelector('.app-header');
+  const observer = new ResizeObserver(updateStickyOffsets);
+  if (banner) observer.observe(banner);
+  if (header) observer.observe(header);
+}
+
 // --- 保存失敗の警告バナー ---
 // 保存はほぼ全ての操作から呼ばれるため、失敗しても画面は正常に見えてしまう。
 // 一度でも失敗したら、成功するまで消えない警告を常時表示する。
@@ -207,6 +234,7 @@ async function main() {
   state = await initState();
   renderEventSwitcher();
   watchExternalChanges();
+  watchStickyOffsets();
 
   window.addEventListener('hashchange', renderPage);
   // 遅延保存が保留されたままページを離れると、直前の入力が失われるため書き切る。

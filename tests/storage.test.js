@@ -4,7 +4,7 @@ import {
 } from 'vitest';
 import {
   isValidStateShape, migrateSegments, getActiveEventId, getActiveEvent, setActiveEvent, createEvent,
-  createSegmentInstance, initState, saveState,
+  createSegmentInstance, segmentsOfType, initState, saveState,
   STORAGE_KEY, StateLoadError, setSaveErrorHandler, backupCurrentState, readBackupRaw,
   clearStoredState, clearBackupState, importStateFromFile, countExternalImageUrls, scheduleSave, flushScheduledSave, hasBackup,
   canToggleUserTracking, isUserTrackingEnabled,
@@ -677,6 +677,191 @@ describe('createSegmentInstance', () => {
   it('未対応のtypeを渡すと例外を投げる', () => {
     const state = { segments: [] };
     expect(() => createSegmentInstance(state, { eventId: 'e1', type: 'unknownType', name: 'テスト' })).toThrow();
+  });
+});
+
+describe('createSegmentInstance の企画コピー(copyFromSegmentId)', () => {
+  it('shopGacha: 品目・景品・レートはIDを変えて複製し、ログ・在庫消化・付与履歴は空になる', () => {
+    const state = { segments: [] };
+    const source = createSegmentInstance(state, { eventId: 'e1', type: 'shopGacha', name: '役職' });
+    source.config.shopItems.push({
+      id: 'item1', name: 'ぬいぐるみ', requiredPoints: 500, stock: 3, allowDuplicate: false,
+    });
+    source.config.gacha.prizes.push({
+      id: 'prize1', name: '当たり', probability: 20, stock: 1, allowDuplicate: false, guaranteedPoints: 1000,
+    });
+    source.config.gacha.rateTiers.push({ id: 'tier1', points: 300, draws: 1 });
+    source.config.shopLog.push({ id: 'log1', userId: 'u1', itemId: 'item1' });
+    source.config.gachaLog.push({ id: 'glog1', userId: 'u1', prizeId: 'prize1' });
+    source.config.freeDrawGrants.push({ id: 'grant1', userId: 'u1', count: 1 });
+    source.config.streamPostGrantedUserIds.push('u1');
+
+    const copy = createSegmentInstance(state, {
+      eventId: 'e1', type: 'shopGacha', name: '役職(コピー)', copyFromSegmentId: source.id,
+    });
+
+    expect(copy.config.shopItems).toEqual([{
+      id: expect.any(String), name: 'ぬいぐるみ', requiredPoints: 500, stock: 3, allowDuplicate: false,
+    }]);
+    expect(copy.config.shopItems[0].id).not.toBe('item1');
+    expect(copy.config.gacha.prizes[0]).toMatchObject({ name: '当たり', probability: 20, guaranteedPoints: 1000 });
+    expect(copy.config.gacha.prizes[0].id).not.toBe('prize1');
+    expect(copy.config.gacha.rateTiers[0]).toMatchObject({ points: 300, draws: 1 });
+    expect(copy.config.gacha.rateTiers[0].id).not.toBe('tier1');
+    expect(copy.config.shopLog).toEqual([]);
+    expect(copy.config.gachaLog).toEqual([]);
+    expect(copy.config.freeDrawGrants).toEqual([]);
+    expect(copy.config.streamPostGrantedUserIds).toEqual([]);
+  });
+
+  it('panelOpen: 条件はkind/label/target/giftIdを引き継ぎ、current/achieved/notesはリセットされる', () => {
+    const state = { segments: [] };
+    const source = createSegmentInstance(state, { eventId: 'e1', type: 'panelOpen', name: 'パネル' });
+    source.config.imageUrl = 'https://example.com/panel.png';
+    source.config.conditions.push(
+      {
+        id: 'c1', kind: 'manualCheck', label: 'スター', achieved: true, notes: [{ id: 'n1', value: '1', memo: '' }],
+      },
+      {
+        id: 'c2', kind: 'manualCounter', label: '同接', target: 100, current: 42,
+      },
+      {
+        id: 'c3', kind: 'giftCount', label: 'あふおも', giftId: 'gift1', target: 10,
+      },
+    );
+
+    const copy = createSegmentInstance(state, {
+      eventId: 'e1', type: 'panelOpen', name: 'パネル(コピー)', copyFromSegmentId: source.id,
+    });
+
+    expect(copy.config.imageUrl).toBe('https://example.com/panel.png');
+    const [c1, c2, c3] = copy.config.conditions;
+    expect(c1).toMatchObject({ kind: 'manualCheck', label: 'スター', achieved: false, notes: [] });
+    expect(c1.id).not.toBe('c1');
+    expect(c2).toMatchObject({
+      kind: 'manualCounter', label: '同接', target: 100, current: 0,
+    });
+    expect(c3).toMatchObject({
+      kind: 'giftCount', label: 'あふおも', giftId: 'gift1', target: 10,
+    });
+    // 元segment側の条件・記録は複製の影響を受けない
+    expect(source.config.conditions[1].current).toBe(42);
+  });
+
+  it('shiraPai: 罰ゲームの実施回数(count)・ルーレット残数・履歴はリセットされ、対象ギフトは引き継ぐ', () => {
+    const state = { segments: [] };
+    const source = createSegmentInstance(state, { eventId: 'e1', type: 'shiraPai', name: '罰ゲーム' });
+    source.config.punishments.push({
+      id: 'p1', name: '足つぼ', count: 5, giftIds: ['gift1'],
+    });
+    source.config.rouletteGiftIds = ['gift2']; // buildConfigの既定には無く、shiraPaiView側で遅延初期化されるフィールド
+    source.config.spinCredits = 3;
+    source.config.history.push({ id: 'h1', punishmentId: 'p1' });
+
+    const copy = createSegmentInstance(state, {
+      eventId: 'e1', type: 'shiraPai', name: '罰ゲーム(コピー)', copyFromSegmentId: source.id,
+    });
+
+    expect(copy.config.punishments[0]).toMatchObject({ name: '足つぼ', count: 0, giftIds: ['gift1'] });
+    expect(copy.config.punishments[0].id).not.toBe('p1');
+    expect(copy.config.rouletteGiftIds).toEqual(['gift2']);
+    expect(copy.config.spinCredits).toBe(0);
+    expect(copy.config.history).toEqual([]);
+  });
+
+  it('categoryEndurance: 対象カテゴリ・初期値は引き継ぎ、投げられた数(given)は0に戻る', () => {
+    const state = { segments: [] };
+    const source = createSegmentInstance(state, { eventId: 'e1', type: 'categoryEndurance', name: '耐久' });
+    source.config.category = 'PASSION';
+    source.config.giftCounts.push({ giftId: 'gift1', initial: 20, given: 15 });
+
+    const copy = createSegmentInstance(state, {
+      eventId: 'e1', type: 'categoryEndurance', name: '耐久(コピー)', copyFromSegmentId: source.id,
+    });
+
+    expect(copy.config.category).toBe('PASSION');
+    expect(copy.config.giftCounts).toEqual([{
+      id: expect.any(String), giftId: 'gift1', initial: 20, given: 0,
+    }]);
+  });
+
+  it('setlist: 曲名・並び順は引き継ぎ、済みフラグ(done)はfalseに戻る', () => {
+    const state = { segments: [] };
+    const source = createSegmentInstance(state, { eventId: 'e1', type: 'setlist', name: 'ラスラン' });
+    source.config.songs.push({ id: 's1', title: '曲A', done: true }, { id: 's2', title: '曲B', done: false });
+
+    const copy = createSegmentInstance(state, {
+      eventId: 'e1', type: 'setlist', name: 'ラスラン(コピー)', copyFromSegmentId: source.id,
+    });
+
+    expect(copy.config.songs.map((s) => s.title)).toEqual(['曲A', '曲B']);
+    expect(copy.config.songs.every((s) => s.done === false)).toBe(true);
+    expect(copy.config.songs[0].id).not.toBe('s1');
+  });
+
+  it('counter: ルールは引き継ぎ、countは0に戻る', () => {
+    const state = { segments: [] };
+    const source = createSegmentInstance(state, { eventId: 'e1', type: 'counter', name: 'カウンター' });
+    source.config.count = 50;
+    source.config.rules.push({ id: 'r1', giftId: 'gift1', delta: 5 });
+
+    const copy = createSegmentInstance(state, {
+      eventId: 'e1', type: 'counter', name: 'カウンター(コピー)', copyFromSegmentId: source.id,
+    });
+
+    expect(copy.config.count).toBe(0);
+    expect(copy.config.rules[0]).toMatchObject({ giftId: 'gift1', delta: 5 });
+    expect(copy.config.rules[0].id).not.toBe('r1');
+  });
+
+  it('copyFromSegmentIdが存在しないIDの場合は無視して空のconfigで作成する', () => {
+    const state = { segments: [] };
+    const segment = createSegmentInstance(state, {
+      eventId: 'e1', type: 'counter', name: 'カウンター', copyFromSegmentId: 'no-such-id',
+    });
+    expect(segment.config).toEqual({ count: 0, rules: [] });
+  });
+
+  it('copyFromSegmentIdが別typeのsegmentを指している場合は無視して空のconfigで作成する(型不一致の取り違え防止)', () => {
+    const state = { segments: [] };
+    const shiraPai = createSegmentInstance(state, { eventId: 'e1', type: 'shiraPai', name: '罰ゲーム' });
+    const segment = createSegmentInstance(state, {
+      eventId: 'e1', type: 'counter', name: 'カウンター', copyFromSegmentId: shiraPai.id,
+    });
+    expect(segment.config).toEqual({ count: 0, rules: [] });
+  });
+});
+
+describe('segmentsOfType', () => {
+  it('指定typeのsegmentだけを、全イベント横断でdate降順(新しい順)に返す', () => {
+    const state = { segments: [] };
+    createSegmentInstance(state, {
+      eventId: 'e1', type: 'setlist', name: '古い方', date: '2026-08-01',
+    });
+    const newer = createSegmentInstance(state, {
+      eventId: 'e2', type: 'setlist', name: '新しい方', date: '2026-08-20',
+    });
+    createSegmentInstance(state, { eventId: 'e1', type: 'counter', name: '別type' });
+
+    const result = segmentsOfType(state, 'setlist');
+    expect(result).toHaveLength(2);
+    expect(result[0].id).toBe(newer.id);
+  });
+
+  it('日付未設定のsegmentは末尾になる', () => {
+    const state = { segments: [] };
+    const undated = createSegmentInstance(state, { eventId: 'e1', type: 'setlist', name: '未設定' });
+    const dated = createSegmentInstance(state, {
+      eventId: 'e1', type: 'setlist', name: '設定済み', date: '2026-08-20',
+    });
+
+    const result = segmentsOfType(state, 'setlist');
+    expect(result.map((s) => s.id)).toEqual([dated.id, undated.id]);
+  });
+
+  it('該当するsegmentが無ければ空配列を返す', () => {
+    const state = { segments: [] };
+    expect(segmentsOfType(state, 'setlist')).toEqual([]);
   });
 });
 

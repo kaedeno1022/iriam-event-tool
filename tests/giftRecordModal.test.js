@@ -292,11 +292,81 @@ describe('openGiftRecordModal', () => {
     expect(state.giftLogs).toHaveLength(0); // gift-1側も含めて1件も保存されない
   });
 
+  it('カート個数欄に直接数値を入力すると、その個数で保存される', () => {
+    const state = baseState();
+    state.giftMaster.push({ id: 'gift-1', name: 'ギフトA', points: 10, category: '定番', lastUsedAt: null, useCount: 0, custom: false });
+    const save = vi.fn();
+    openGiftRecordModal({ state, segmentId: 'seg1', save, onSaved: vi.fn() });
+
+    document.querySelector('#grm-user').value = 'u1';
+    findGiftChip('ギフトA (10pt)').click();
+
+    const qtyInput = document.querySelector('.cart-row-qty');
+    qtyInput.value = '5';
+    qtyInput.dispatchEvent(new Event('change'));
+
+    clickCartSaveButton();
+
+    expect(state.giftLogs).toHaveLength(1);
+    expect(state.giftLogs[0].qty).toBe(5);
+  });
+
+  it('カート個数欄に0以下や空を入力しても1未満にはならない', () => {
+    const state = baseState();
+    state.giftMaster.push({ id: 'gift-1', name: 'ギフトA', points: 10, category: '定番', lastUsedAt: null, useCount: 0, custom: false });
+    openGiftRecordModal({ state, segmentId: 'seg1', save: vi.fn(), onSaved: vi.fn() });
+
+    document.querySelector('#grm-user').value = 'u1';
+    findGiftChip('ギフトA (10pt)').click();
+
+    // refreshCart()で行ごと作り直されるため、変更のたびに.cart-row-qtyを再取得する
+    const qtyInput = () => document.querySelector('.cart-row-qty');
+
+    qtyInput().value = '0';
+    qtyInput().dispatchEvent(new Event('change'));
+    expect(qtyInput().value).toBe('1');
+
+    qtyInput().value = '';
+    qtyInput().dispatchEvent(new Event('change'));
+    expect(qtyInput().value).toBe('1');
+
+    qtyInput().value = '-5';
+    qtyInput().dispatchEvent(new Event('change'));
+    expect(qtyInput().value).toBe('1');
+
+    clickCartSaveButton();
+
+    expect(state.giftLogs[0].qty).toBe(1);
+  });
+
+  it('新規ユーザー欄は既定で畳まれており、トグルボタンで開閉できる', () => {
+    const state = baseState();
+    openGiftRecordModal({ state, segmentId: 'seg1', save: vi.fn(), onSaved: vi.fn() });
+
+    const hasNewUserInput = () => [...document.querySelectorAll('input[type="text"]')]
+      .some((i) => i.placeholder === '新規ユーザー名');
+    expect(hasNewUserInput()).toBe(false);
+
+    const openBtn = [...document.querySelectorAll('button')].find((b) => b.textContent === '＋ 新規ユーザーを追加');
+    expect(openBtn).toBeTruthy();
+    openBtn.click();
+
+    expect(hasNewUserInput()).toBe(true);
+    const closeBtn = [...document.querySelectorAll('button')].find((b) => b.textContent === '▲ 新規ユーザー追加を閉じる');
+    expect(closeBtn).toBeTruthy();
+
+    closeBtn.click();
+    expect(hasNewUserInput()).toBe(false);
+  });
+
   it('新規ユーザー追加ボタンで作成したユーザーが自動選択され、続けてギフトをタップしても選択が保持される', () => {
     const state = baseState();
     state.giftMaster.push({ id: 'gift-1', name: 'ギフトA', points: 10, category: '定番', lastUsedAt: null, useCount: 0, custom: false });
     const save = vi.fn();
     openGiftRecordModal({ state, segmentId: 'seg1', save, onSaved: vi.fn() });
+
+    // 新規ユーザー欄は既定で畳まれているため、先にトグルを開く
+    [...document.querySelectorAll('button')].find((b) => b.textContent === '＋ 新規ユーザーを追加').click();
 
     const newUserInputs = () => [...document.querySelectorAll('input[type="text"]')];
     const newUserInput = newUserInputs().find((i) => i.placeholder === '新規ユーザー名');

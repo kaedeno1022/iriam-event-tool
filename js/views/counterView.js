@@ -43,6 +43,7 @@ function renderRuleRow({
     type: 'button',
     class: 'btn-icon',
     title: '削除',
+    'aria-label': '削除',
     onclick: async () => {
       if (!(await showConfirm(`ルール「${gift ? gift.name : '(削除済みギフト)'} ${deltaLabel}」を削除しますか？`))) return;
       segment.config.rules = segment.config.rules.filter((r) => r !== rule);
@@ -103,12 +104,16 @@ export function renderCounter({
   const minusBtn = el('button', {
     type: 'button',
     class: 'btn-round',
+    title: 'カウントを減らす',
+    'aria-label': 'カウントを減らす',
     onclick: () => { segment.config.count = clampCount(segment.config.count - 1, segment.config.count); save(); rerender(); },
   }, '－');
 
   const plusBtn = el('button', {
     type: 'button',
     class: 'btn-round',
+    title: 'カウントを増やす',
+    'aria-label': 'カウントを増やす',
     onclick: () => { segment.config.count += 1; save(); rerender(); },
   }, '＋');
 
@@ -189,6 +194,7 @@ export function renderCounter({
           type: 'button',
           class: 'btn-icon',
           title: '個数を編集',
+          'aria-label': '個数を編集',
           onclick: async () => {
             const newQtyStr = await showPrompt('新しい個数を入力', String(l.qty));
             if (newQtyStr === null) return;
@@ -205,6 +211,7 @@ export function renderCounter({
           type: 'button',
           class: 'btn-icon',
           title: '取り消し',
+          'aria-label': '取り消し',
           onclick: async () => {
             if (!(await showConfirm('この記録を取り消しますか？'))) return;
             segment.config.count -= (l.appliedDelta ?? 0) * l.qty;

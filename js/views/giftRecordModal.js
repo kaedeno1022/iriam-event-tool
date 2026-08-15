@@ -20,6 +20,7 @@ export function openGiftRecordModal({
   let qty = 1; // lockGiftId時・ポイント直接入力時のみ使う個数
   let cart = []; // ロックなしのギフト選択時のみ使う複数選択カート: [{ giftId, qty }]
   let newUserName = '';
+  let newUserFormOpen = false; // 既存ユーザーの選択が大半を占めるため、既定では畳んでおく
   let selectedUserId = initialUserId;
   let giftPicker = null;
   // カート関連のDOM要素は一度だけ生成して使い回す。カートの増減はこれらの中身だけを
@@ -62,12 +63,25 @@ export function openGiftRecordModal({
       const nameLabel = gift ? `${gift.name} (${gift.points != null ? `${gift.points}pt` : 'pt不明'})` : '(削除済みギフト)';
       return el('div', { class: 'cart-row' }, [
         el('span', { class: 'cart-row-name' }, nameLabel),
-        el('button', { type: 'button', class: 'btn-round', onclick: () => { entry.qty = Math.max(1, entry.qty - 1); refreshCart(); } }, '－'),
-        el('span', { class: 'cart-row-qty' }, String(entry.qty)),
-        el('button', { type: 'button', class: 'btn-round', onclick: () => { entry.qty += 1; refreshCart(); } }, '＋'),
+        el('button', {
+          type: 'button', class: 'btn-round', title: '個数を減らす', 'aria-label': '個数を減らす', onclick: () => { entry.qty = Math.max(1, entry.qty - 1); refreshCart(); },
+        }, '－'),
+        el('input', {
+          type: 'number',
+          min: '1',
+          value: String(entry.qty),
+          class: 'cart-row-qty',
+          'aria-label': `${nameLabel}の個数`,
+          // 1文字打つたびに全行を作り直すとキャレット位置が飛ぶため、確定(blur/Enter)時にだけ反映する
+          onchange: (e) => { entry.qty = Math.max(1, Number(e.target.value) || 1); refreshCart(); },
+          onkeydown: (ev) => { if (ev.key === 'Enter') ev.target.blur(); },
+        }),
+        el('button', {
+          type: 'button', class: 'btn-round', title: '個数を増やす', 'aria-label': '個数を増やす', onclick: () => { entry.qty += 1; refreshCart(); },
+        }, '＋'),
         el('span', { class: 'cart-row-subtotal' }, `${subtotal}pt`),
         el('button', {
-          type: 'button', class: 'btn-icon', title: '削除', onclick: () => { cart.splice(idx, 1); refreshCart(); },
+          type: 'button', class: 'btn-icon', title: '削除', 'aria-label': '削除', onclick: () => { cart.splice(idx, 1); refreshCart(); },
         }, '🗑'),
       ]);
     });
@@ -123,10 +137,23 @@ export function openGiftRecordModal({
         state.users.push(user);
         save(state);
         newUserName = '';
+        newUserFormOpen = false;
         selectedUserId = user.id;
         render();
       },
     }, '追加');
+
+    // 記録のたびに大半は既存ユーザーを選ぶだけなので、新規追加は畳んで優先度を下げる。
+    // collapsibleSection共通部品は「〜を編集」固定文言でここには馴染まないため、専用の文言で組む。
+    const newUserToggleBtn = el('button', {
+      type: 'button',
+      class: 'btn-secondary',
+      onclick: () => { newUserFormOpen = !newUserFormOpen; render(); },
+    }, newUserFormOpen ? '▲ 新規ユーザー追加を閉じる' : '＋ 新規ユーザーを追加');
+    const newUserSection = el('div', { class: 'collapsible' }, [
+      newUserToggleBtn,
+      newUserFormOpen ? el('div', { class: 'form-row inline' }, [newUserInput, addUserBtn]) : null,
+    ]);
 
     const modeToggle = lockGiftId ? null : el('div', { class: 'mode-toggle' }, [
       el('button', {
@@ -173,8 +200,12 @@ export function openGiftRecordModal({
     let qtyRow = null;
     if (!(isCartMode && mode === 'gift')) {
       const qtyInput = el('input', { type: 'number', min: '1', value: String(qty), id: 'grm-qty', oninput: (e) => { qty = Math.max(1, Number(e.target.value) || 1); } });
-      const qtyMinus = el('button', { type: 'button', class: 'btn-round', onclick: () => { qty = Math.max(1, qty - 1); qtyInput.value = String(qty); } }, '－');
-      const qtyPlus = el('button', { type: 'button', class: 'btn-round', onclick: () => { qty += 1; qtyInput.value = String(qty); } }, '＋');
+      const qtyMinus = el('button', {
+        type: 'button', class: 'btn-round', title: '個数を減らす', 'aria-label': '個数を減らす', onclick: () => { qty = Math.max(1, qty - 1); qtyInput.value = String(qty); },
+      }, '－');
+      const qtyPlus = el('button', {
+        type: 'button', class: 'btn-round', title: '個数を増やす', 'aria-label': '個数を増やす', onclick: () => { qty += 1; qtyInput.value = String(qty); },
+      }, '＋');
       qtyRow = el('div', { class: 'form-row inline' }, [el('label', {}, '個数'), qtyMinus, qtyInput, qtyPlus]);
     }
 
@@ -248,10 +279,10 @@ export function openGiftRecordModal({
     const box = el('div', { class: 'modal-box' }, [
       el('div', { class: 'modal-header' }, [
         el('h3', {}, 'ギフト記録'),
-        el('button', { type: 'button', class: 'btn-close', onclick: close }, '×'),
+        el('button', { type: 'button', class: 'btn-close', title: '閉じる', 'aria-label': '閉じる', onclick: close }, '×'),
       ]),
       trackUsers ? el('div', { class: 'form-row' }, [el('label', {}, 'ユーザー'), userSelect]) : null,
-      trackUsers ? el('div', { class: 'form-row inline' }, [newUserInput, addUserBtn]) : null,
+      trackUsers ? newUserSection : null,
       trackUsers ? null : el('p', { class: 'empty-hint' }, 'この企画はユーザーを記録しない設定です。記録にユーザー名は残りません。'),
       modeToggle,
       pickerSection,
