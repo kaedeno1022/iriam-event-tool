@@ -277,14 +277,14 @@ describe('migrateSegments', () => {
         type: 'maidCorner',
         name: 'メイド枠',
         order: 0,
-        config: { gacha: { drawMode: 'select', prizes: [{ id: 'p1' }] }, gachaTicketPurchases: [{ id: 't1' }] },
+        config: { gacha: { drawMode: 'select', prizes: [{ id: 'p1', probability: 100 }] }, gachaTicketPurchases: [{ id: 't1' }] },
       }],
     };
     migrateSegments(state);
 
     const maidCorner = state.segments.find((s) => s.key === 'maidCorner');
     expect(maidCorner.config.gacha.drawMode).toBeUndefined();
-    expect(maidCorner.config.gacha.prizes).toEqual([{ id: 'p1' }]);
+    expect(maidCorner.config.gacha.prizes).toEqual([{ id: 'p1', probability: 100 }]);
     expect(maidCorner.config.gachaTicketPurchases).toBeUndefined();
   });
 
@@ -362,13 +362,13 @@ describe('migrateSegments', () => {
     const state = {
       events: [{ id: 'event1' }],
       segments: [{
-        id: 'seg4', eventId: 'event1', type: 'shopGacha', key: 'role', name: '役職', order: 0, config: { gacha: { prizes: [{ id: 'p1' }] } },
+        id: 'seg4', eventId: 'event1', type: 'shopGacha', key: 'role', name: '役職', order: 0, config: { gacha: { prizes: [{ id: 'p1', probability: 100 }] } },
       }],
     };
     migrateSegments(state);
 
     const gacha = state.segments.find((s) => s.key === 'role').config.gacha;
-    expect(gacha.prizes).toEqual([{ id: 'p1' }]);
+    expect(gacha.prizes).toEqual([{ id: 'p1', probability: 100 }]);
     expect(gacha.rateTiers).toEqual([]);
   });
 

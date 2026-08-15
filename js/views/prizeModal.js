@@ -36,6 +36,7 @@ export function openPrizeModal({
       id: 'prize-probability',
       min: '0',
       max: '100',
+      step: '1',
       value: String(source.probability ?? (others.length === 0 ? 100 : 10)),
       disabled: others.length === 0,
     });
@@ -55,9 +56,12 @@ export function openPrizeModal({
         const name = nameInput.value.trim();
         if (!name) { await showAlert('景品名を入力してください'); return; }
 
+        // 整数に限る。redistributeProbabilityが他の景品をMath.roundで整数化し、端数を
+        // 最終要素へ寄せて合計100を作る設計のため、小数を混ぜると合計が
+        // 100.00000000000001のような値になり、合計100の判定(===)から外れて誤警告が出る。
         const probability = others.length === 0 ? 100 : Number(probabilityInput.value);
-        if (!Number.isFinite(probability) || probability < 0 || probability > 100) {
-          await showAlert('確率は0〜100の数値で入力してください');
+        if (!Number.isInteger(probability) || probability < 0 || probability > 100) {
+          await showAlert('確率は0〜100の整数で入力してください');
           return;
         }
 

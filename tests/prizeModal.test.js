@@ -103,7 +103,7 @@ describe('openPrizeModal', () => {
     await flush();
 
     expect(prizes).toHaveLength(1);
-    expect(showAlert).toHaveBeenCalledWith('確率は0〜100の数値で入力してください');
+    expect(showAlert).toHaveBeenCalledWith('確率は0〜100の整数で入力してください');
   });
 
   it('確定枠に0以下の値を入力すると保存されずアラートが出る', async () => {
@@ -201,5 +201,26 @@ describe('openPrizeModal', () => {
     expect(prizes).toHaveLength(0);
     expect(save).not.toHaveBeenCalled();
     expect(document.querySelector('.modal-box')).toBeNull();
+  });
+
+  // Number.isFinite に戻すと通ってしまうため、範囲内の小数で整数制約そのものを検証する。
+  // 小数を許すと redistributeProbability の丸めで合計が100からわずかにずれ、
+  // 合計100の判定(===)から外れて誤警告が出る。
+  it('範囲内でも小数の確率は保存されずアラートが出る', async () => {
+    const prizes = [
+      { id: 'p1', name: '既存A', probability: 50, stock: null, allowDuplicate: true },
+      { id: 'p2', name: '既存B', probability: 50, stock: null, allowDuplicate: true },
+    ];
+    const save = vi.fn();
+    openPrizeModal({ prizes, prize: null, save, onSaved: vi.fn() });
+
+    setInputValue('#prize-name', '新規景品');
+    setInputValue('#prize-probability', '12.5');
+    clickButtonByText('追加する');
+    await flush();
+
+    expect(showAlert).toHaveBeenCalledWith('確率は0〜100の整数で入力してください');
+    expect(prizes).toHaveLength(2);
+    expect(save).not.toHaveBeenCalled();
   });
 });

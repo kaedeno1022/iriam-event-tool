@@ -23,6 +23,52 @@ const MODE_LABEL = {
   random: '抽選', guaranteed: '確定', free: '無料',
 };
 
+// 表示用の確率。抽選側(weightedRandomPick)が数値以外を0として扱うのに合わせる。
+// アプリの操作経路では必ず数値が入るが、インポートしたJSONでは欠落・null・文字列がありうる。
+// 素の値をそのまま出すと「undefined%」「null%」になるため、抽選の解釈に揃えて0を出す。
+function probabilityOf(prize) {
+  return Math.max(0, Number(prize.probability) || 0);
+}
+
+// 今引ける候補に対して、weightedRandomPickが実際にどう振る舞うかを一文で返す。
+function drawBehaviourText(eligible) {
+  if (eligible.length === 0) return '現在は在庫切れ等で引ける景品がありません';
+  if (eligible.every((p) => probabilityOf(p) === 0)) return 'この状態では今引ける景品が全て等確率で抽選されます';
+  return '抽選は表示値の比率で行われるため、表示と実際の当選率が一致しません';
+}
+
+// 表示している確率と実際の抽選結果が食い違う状態を言葉で返す(正常時はnull)。
+// 性質の違う2つを別々に見る。まとめて「候補の合計が100%でなければ警告」にすると、
+// 被り不可(景品の既定)のガチャで当選者が出るたびに候補合計が100%未満になり、
+// 正常な進行中ずっと警告が出続けてしまう(20%×5件の被り不可で1回当てれば80%になる)。
+//
+//  (1) 登録済み全景品の合計が100%でない
+//      設定の誤り。UIは追加・編集・削除のたびに100%へ再配分するので、通常は起きない。
+//      壊れたJSONを取り込んだ場合に出る。
+//  (2) 今引ける景品(在庫切れ・被り不可で除外した残り)の合計が0%
+//      weightedRandomPickが均等抽選にフォールバックする(js/gacha.js)。全て0%と
+//      表示されているのに等確率で当たるため、表示だけでは絶対に気づけない。
+//      「当たり100%(在庫1) + はずれ0%×2」で当たりの在庫が尽きた瞬間に入る状態で、
+//      壊れたデータでなくても起きる。
+//
+// 候補合計が0より大きく100未満の場合は警告しない。被り不可で当選済みの景品が抜けた
+// 正常な状態がこれにあたり、抽選は残った候補の比率で行われる(期待どおりの挙動)。
+function probabilityMismatchWarning(prizes, eligible) {
+  const registeredTotal = prizes.reduce((sum, p) => sum + probabilityOf(p), 0);
+  if (prizes.length > 0 && registeredTotal !== 100) {
+    // 理由の説明は登録合計ではなく「実際に引かれる候補」から決める。登録合計が0でなくても、
+    // 非0%の景品が在庫切れ・被り不可で抜けていれば均等抽選に落ちるため
+    // (例: A80%が在庫切れ / B0% / C0% → 登録合計80%だが候補は均等抽選)。
+    return `景品の確率の合計が${registeredTotal}%です(本来は100%)。${drawBehaviourText(eligible)}。各景品の確率を設定し直してください。`;
+  }
+  if (eligible.length > 0 && eligible.every((p) => probabilityOf(p) === 0)) {
+    // eligiblePrizesは在庫切れと被り不可の両方で候補を落とす。既定が被り不可なので、
+    // 在庫だけを案内すると原因を探しても見つからない利用者が出る。
+    return `今引ける景品${eligible.length}件の確率がすべて0%です。この状態では全て等確率で抽選されます(表示どおりには当たりません)。在庫切れ、または被り不可で当選済みの景品が候補から外れていないか確認してください。`;
+  }
+  return null;
+}
+
 // segmentId指定時はそのsegmentを直接表示する(ダッシュボードのカレンダーから日付ベースの
 // 非既定インスタンスを開く場合)。未指定時は従来通りタブ用の既定枠(key===segmentKey)を表示する。
 function findSegment(state, { segmentKey, segmentId }) {
@@ -381,7 +427,7 @@ function renderGachaSection({
   const prizeRows = gacha.prizes.map((prize) => {
     const stock = remainingPrizeStock(prize, log);
     return el('div', { class: 'card punishment-row' }, [
-      el('span', { class: 'punishment-name' }, `${prize.name}(${prize.probability}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
+      el('span', { class: 'punishment-name' }, `${prize.name}(${probabilityOf(prize)}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
       el('button', {
         type: 'button',
         class: 'btn-icon',
@@ -544,7 +590,14 @@ function renderGachaSection({
     ]),
   ]));
 
+  // 折りたたみの「景品一覧」の中ではなく、抽選ボタンより前に出す。
+  // 表示と実際の当選率が食い違っている状態は、抽選を回す前に気づけないと意味がない。
+  // 対象ユーザー未選択(userId='')の時も、被り不可の除外が効かないだけで在庫切れの判定は
+  // 効くため、そのまま評価してよい。
+  const mismatchWarning = probabilityMismatchWarning(gacha.prizes, eligiblePrizes(gacha.prizes, log, userId));
+
   return el('div', {}, [
+    mismatchWarning ? el('p', { class: 'probability-warning', role: 'alert' }, mismatchWarning) : null,
     paidDrawArea,
     freeDrawArea,
     guaranteedArea,

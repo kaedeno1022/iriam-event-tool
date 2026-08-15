@@ -629,3 +629,226 @@ describe('renderShopGacha - segmentId指定(日付ベースの非既定インス
     expect(containerB.querySelector('.user-select-widget select').value).toBe('');
   });
 });
+
+describe('renderShopGacha - 確率合計の警告', () => {
+  let container;
+  let rerender;
+  let state;
+
+  function setPrizes(prizes) {
+    state.segments.find((s) => s.key === 'maidCorner').config.gacha.prizes = prizes;
+  }
+
+  function warningText() {
+    const node = container.querySelector('.probability-warning');
+    return node ? node.textContent : null;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    showAlert.mockResolvedValue(undefined);
+    showConfirm.mockResolvedValue(true);
+    showPrompt.mockResolvedValue(null);
+
+    resetShopGachaUiState();
+    document.body.innerHTML = '<div id="root"></div><div id="modal-root"></div>';
+    container = document.getElementById('root');
+    state = buildState();
+    rerender = () => {
+      container.replaceChildren();
+      renderShopGacha({
+        state, save: vi.fn(), rerender, container, segmentKey: 'maidCorner',
+      });
+    };
+  });
+
+  async function openGachaTab() {
+    rerender();
+    await clickByText(container, 'button', 'ガチャ');
+  }
+
+  it('合計が100%なら警告を出さない', async () => {
+    setPrizes([
+      { id: 'p1', name: 'A', probability: 70, stock: null, allowDuplicate: true },
+      { id: 'p2', name: 'B', probability: 30, stock: null, allowDuplicate: true },
+    ]);
+    await openGachaTab();
+
+    expect(warningText()).toBeNull();
+  });
+
+  it('景品が1件も無ければ警告を出さない(合計0だが設定前の正常な状態)', async () => {
+    setPrizes([]);
+    await openGachaTab();
+
+    expect(warningText()).toBeNull();
+  });
+
+  // 登録済みの合計が0%(全景品が確率を持たない)。設定の誤りとして(1)側で警告する。
+  it('登録済みの合計が0%なら設定の誤りとして警告する', async () => {
+    setPrizes([
+      { id: 'p1', name: 'A', stock: null, allowDuplicate: true },
+      { id: 'p2', name: 'B', stock: null, allowDuplicate: true },
+    ]);
+    await openGachaTab();
+
+    expect(warningText()).toContain('合計が0%');
+    expect(warningText()).toContain('設定し直してください');
+    // 合計0%は均等抽選に落ちる。「比率で行われる」と説明すると原因を取り違えさせる
+    expect(warningText()).toContain('等確率');
+    expect(warningText()).not.toContain('比率');
+  });
+
+  // 被り不可はガチャ景品の既定。当選者が出るたび候補合計が100%未満になるが、これは
+  // 正常な進行であって設定の誤りではない。ここで警告を出すと、警告が常態化して
+  // 本当に見てほしい時に読まれなくなる。
+  it('被り不可の景品を1件当てた後も、正常な進行として警告を出さない', async () => {
+    setPrizes([
+      { id: 'p1', name: 'A', probability: 50, stock: null, allowDuplicate: false },
+      { id: 'p2', name: 'B', probability: 50, stock: null, allowDuplicate: false },
+    ]);
+    state.segments.find((s) => s.key === 'maidCorner').config.gachaLog.push({
+      id: 'gl1', timestamp: '2026-08-18T10:00:00.000Z', userId: 'u1', prizeId: 'p1', prizeName: 'A', mode: 'random', pointsSpent: 100,
+    });
+    await openGachaTab();
+
+    expect(warningText()).toBeNull();
+  });
+
+  // 警告は抽選ボタンより前に無いと、押した後に気づくことになる。
+  // レートを登録して実際の抽選ボタンを描画させ、それをアンカーにする
+  // (アンカーが折りたたみ見出しだと、抽選エリアの直後へ動かしても通ってしまう)。
+  it('警告は抽選ボタンより前に配置される', async () => {
+    const segment = state.segments.find((s) => s.key === 'maidCorner');
+    segment.config.gacha.rateTiers = [{ id: 't1', points: 300, draws: 1 }];
+    setPrizes([
+      { id: 'p1', name: 'A', stock: null, allowDuplicate: true },
+      { id: 'p2', name: 'B', stock: null, allowDuplicate: true },
+    ]);
+    await openGachaTab();
+    selectUser(container, 'u1'); // 抽選ボタンは対象ユーザーを選ばないと描画されない
+
+    const warning = container.querySelector('.probability-warning');
+    const drawBtn = findByText(container, 'button', '300ptで1回分');
+    expect(warning).not.toBeNull();
+    expect(drawBtn).toBeTruthy();
+    // DOCUMENT_POSITION_FOLLOWING(4) = drawBtnがwarningより後ろ
+    expect(warning.compareDocumentPosition(drawBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('合計が100%でも0%でもないときは、表示と当選率が一致しないことを警告する', async () => {
+    setPrizes([
+      { id: 'p1', name: 'A', probability: 50, stock: null, allowDuplicate: true },
+      { id: 'p2', name: 'B', probability: 30, stock: null, allowDuplicate: true },
+    ]);
+    await openGachaTab();
+
+    expect(warningText()).toContain('合計が80%');
+    expect(warningText()).toContain('一致しません');
+    expect(warningText()).toContain('設定し直してください');
+    expect(warningText()).toContain('比率');
+  });
+
+  // 登録済みの全景品ではなく「今引ける景品」を基準に判定しないと取り逃すケース。
+  // 壊れたJSONを取り込まなくても、在庫設定だけでこの状態に入る。
+  it('在庫切れで候補が全て0%になった場合、合計100%でも警告を出す', async () => {
+    setPrizes([
+      { id: 'p1', name: '当たり', probability: 100, stock: 1, allowDuplicate: true },
+      { id: 'p2', name: 'はずれA', probability: 0, stock: null, allowDuplicate: true },
+      { id: 'p3', name: 'はずれB', probability: 0, stock: null, allowDuplicate: true },
+    ]);
+    // 在庫のある状態では警告を出さない(登録上の合計は100%で、実際も表示どおり当たる)
+    await openGachaTab();
+    expect(warningText()).toBeNull();
+
+    // 「当たり」の在庫が尽きると、候補は0%の2件だけになり均等抽選に落ちる
+    state.segments.find((s) => s.key === 'maidCorner').config.gachaLog.push({
+      id: 'gl1', timestamp: '2026-08-18T10:00:00.000Z', userId: 'u1', prizeId: 'p1', prizeName: '当たり', mode: 'random', pointsSpent: 100,
+    });
+    await openGachaTab();
+
+    expect(warningText()).toContain('確率がすべて0%');
+    expect(warningText()).toContain('等確率');
+    expect(warningText()).toContain('2件');
+    expect(warningText()).toContain('在庫切れ');
+  });
+
+  // 全景品が在庫切れで候補が空になった場合。抽選導線も「引ける景品がありません」で止まるので、
+  // 警告文も等確率・比率ではなくその事実を伝える必要がある。
+  it('全景品が在庫切れで候補が空なら、引ける景品が無いことを案内する', async () => {
+    setPrizes([
+      { id: 'p1', name: 'A', probability: 60, stock: 1, allowDuplicate: true },
+      { id: 'p2', name: 'B', probability: 60, stock: 1, allowDuplicate: true },
+    ]);
+    const segment = state.segments.find((s) => s.key === 'maidCorner');
+    segment.config.gachaLog.push(
+      { id: 'gl1', timestamp: '2026-08-18T10:00:00.000Z', userId: 'u1', prizeId: 'p1', prizeName: 'A', mode: 'random', pointsSpent: 100 },
+      { id: 'gl2', timestamp: '2026-08-18T10:01:00.000Z', userId: 'u1', prizeId: 'p2', prizeName: 'B', mode: 'random', pointsSpent: 100 },
+    );
+    await openGachaTab();
+
+    // 登録合計120%なので警告(1)が出る。その理由説明が候補ゼロの実態に合っていること
+    expect(warningText()).toContain('合計が120%');
+    expect(warningText()).toContain('引ける景品がありません');
+    expect(warningText()).not.toContain('等確率');
+    expect(warningText()).not.toContain('比率');
+  });
+
+  // 登録合計が0%でも100%でもないのに、候補は均等抽選に落ちるケース。
+  // 理由の説明を「登録合計が0か」で選ぶ実装だと、ここで「比率で行われる」と誤って案内する。
+  it('登録合計が中途半端でも、候補が全て0%なら等確率と案内する', async () => {
+    setPrizes([
+      { id: 'p1', name: '当たり', probability: 80, stock: 1, allowDuplicate: true },
+      { id: 'p2', name: 'はずれA', probability: 0, stock: null, allowDuplicate: true },
+      { id: 'p3', name: 'はずれB', probability: 0, stock: null, allowDuplicate: true },
+    ]);
+    state.segments.find((s) => s.key === 'maidCorner').config.gachaLog.push({
+      id: 'gl1', timestamp: '2026-08-18T10:00:00.000Z', userId: 'u1', prizeId: 'p1', prizeName: '当たり', mode: 'random', pointsSpent: 100,
+    });
+    await openGachaTab();
+
+    expect(warningText()).toContain('合計が80%');
+    expect(warningText()).toContain('等確率');
+    expect(warningText()).not.toContain('比率');
+  });
+
+  // eligiblePrizesは在庫切れと被り不可の両方で候補を落とす。被り不可は景品の既定なので、
+  // 在庫だけを案内すると原因を探しても見つからない。
+  it('被り不可で当選済みの景品が抜けて候補が全て0%になった場合も警告し、被り不可にも言及する', async () => {
+    setPrizes([
+      { id: 'p1', name: '当たり', probability: 100, stock: null, allowDuplicate: false },
+      { id: 'p2', name: 'はずれA', probability: 0, stock: null, allowDuplicate: true },
+      { id: 'p3', name: 'はずれB', probability: 0, stock: null, allowDuplicate: true },
+    ]);
+    state.segments.find((s) => s.key === 'maidCorner').config.gachaLog.push({
+      id: 'gl1', timestamp: '2026-08-18T10:00:00.000Z', userId: 'u1', prizeId: 'p1', prizeName: '当たり', mode: 'random', pointsSpent: 100,
+    });
+    await openGachaTab();
+    selectUser(container, 'u1'); // 被り不可の除外は対象ユーザーを選んで初めて効く
+
+    expect(warningText()).toContain('確率がすべて0%');
+    expect(warningText()).toContain('被り不可');
+  });
+
+  // インポートしたJSONで起こりうる欠落パターン。素の値をそのまま描画すると
+  // 「undefined%」「null%」になる。抽選側の解釈(Number(x)||0)に揃えて0%と出す。
+  it.each([
+    ['フィールド欠落', undefined],
+    ['null', null],
+    ['数値以外の文字列', 'たぶん高確率'],
+  ])('確率が壊れた景品(%s)は0%%と表示し、undefined/nullを出さない', async (_label, probability) => {
+    setPrizes([
+      { id: 'p1', name: '壊れた景品', probability, stock: null, allowDuplicate: true },
+      { id: 'p2', name: '正常な景品', probability: 100, stock: null, allowDuplicate: true },
+    ]);
+    rerender();
+    await clickByText(container, 'button', 'ガチャ');
+    await clickByText(container, 'button', '▼ 景品一覧を編集');
+
+    expect(container.textContent).toContain('壊れた景品(0%)');
+    expect(container.textContent).not.toContain('undefined');
+    expect(container.textContent).not.toContain('null');
+    // 合計は100(正常な景品のみ)になるため、この場合は警告を出さない設計
+    expect(warningText()).toBeNull();
+  });
+});

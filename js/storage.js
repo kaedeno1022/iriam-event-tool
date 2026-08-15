@@ -218,9 +218,9 @@ function migratePanelOpenItems(state) {
   state.segments.push(...toAdd);
 }
 
-// v7より前のガチャ景品はweight(相対値)を持っていたが、確率表示化に伴いprobability(%、
-// 全景品合計100)へ移行した。weightのみでprobabilityを持たない景品だけを変換対象にし、
-// 既にprobabilityを持つ景品(値)には触れない。変換対象には、既存probability景品が
+// 確率表示化(2026年8月)より前のガチャ景品はweight(相対値)を持っていたが、
+// probability(%、全景品合計100)へ移行した。weightのみでprobabilityを持たない景品だけを
+// 変換対象にし、既にprobabilityを持つ景品(値)には触れない。変換対象には、既存probability景品が
 // 既に確保している分を除いた残り予算を、重み比に応じてclampしながら配分する
 // (clampはredistributeProbabilityと同じ理由: しないと丸め誤差で負値になりうる)。
 function migrateGachaWeightToProbability(prizes) {
