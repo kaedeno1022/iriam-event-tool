@@ -1,7 +1,30 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  remainingStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws, redistributeProbability,
+  remainingStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws, redistributeProbability, resolveVariantName,
 } from '../js/gacha.js';
+
+describe('resolveVariantName', () => {
+  it('variants未設定ならnameをそのまま返す', () => {
+    expect(resolveVariantName({ name: 'ランダムチェキ' })).toBe('ランダムチェキ');
+  });
+
+  it('variantsが空配列ならnameをそのまま返す', () => {
+    expect(resolveVariantName({ name: 'ランダムチェキ', variants: [] })).toBe('ランダムチェキ');
+  });
+
+  it('variantsがあれば均等ランダムで1つ選び「name - variant」の形にする', () => {
+    const entry = { name: 'ランダムチェキ', variants: ['A', 'B', 'C'] };
+    const randomSpy = vi.spyOn(Math, 'random');
+
+    randomSpy.mockReturnValue(0); // Math.floor(0*3)=0 -> A
+    expect(resolveVariantName(entry)).toBe('ランダムチェキ - A');
+
+    randomSpy.mockReturnValue(0.999); // Math.floor(0.999*3)=2 -> C
+    expect(resolveVariantName(entry)).toBe('ランダムチェキ - C');
+
+    randomSpy.mockRestore();
+  });
+});
 
 describe('remainingStock', () => {
   it('stockがnull(無制限)ならnullを返す', () => {

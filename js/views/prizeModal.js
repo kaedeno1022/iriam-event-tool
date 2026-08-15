@@ -48,6 +48,9 @@ export function openPrizeModal({
     const guaranteedInput = el('input', {
       type: 'number', id: 'prize-guaranteed', min: '1', value: source.guaranteedPoints != null ? String(source.guaranteedPoints) : '',
     });
+    const variantsInput = el('input', {
+      type: 'text', id: 'prize-variants', value: (source.variants ?? []).join('、'), placeholder: '例: A、B、C',
+    });
 
     const saveBtn = el('button', {
       type: 'button',
@@ -78,6 +81,8 @@ export function openPrizeModal({
           }
         }
 
+        const variants = variantsInput.value.split(/[、,]/).map((v) => v.trim()).filter(Boolean);
+
         redistributeProbability(others, 100 - probability);
         if (isEdit) {
           prize.name = name;
@@ -85,9 +90,10 @@ export function openPrizeModal({
           prize.stock = stock;
           prize.allowDuplicate = allowDuplicateInput.checked;
           prize.guaranteedPoints = guaranteedPoints;
+          prize.variants = variants;
         } else {
           prizes.push({
-            id: genId('prize'), name, probability, stock, allowDuplicate: allowDuplicateInput.checked, guaranteedPoints,
+            id: genId('prize'), name, probability, stock, allowDuplicate: allowDuplicateInput.checked, guaranteedPoints, variants,
           });
         }
         save();
@@ -112,6 +118,11 @@ export function openPrizeModal({
       el('div', { class: 'form-row' }, [el('label', {}, '在庫数(空欄で無制限)'), stockInput]),
       el('label', { class: 'checkbox-row' }, [allowDuplicateInput, '被りを許可する(複数回当選できる)']),
       el('div', { class: 'form-row' }, [el('label', {}, '確定枠の必要pt(空欄なら確定枠なし)'), guaranteedInput]),
+      el('div', { class: 'form-row' }, [
+        el('label', {}, 'バリアント(読点区切り、空欄ならバリアント無し)'),
+        variantsInput,
+        el('p', { class: 'empty-hint' }, '例: ランダムチェキのように当選後さらに絵柄違い等をランダムで1つ決めたい場合に使う。当選/交換確定時にここから均等ランダムで1つ選ばれる。'),
+      ]),
       el('div', { class: 'modal-actions' }, [cancelBtn, saveBtn]),
     ]);
 

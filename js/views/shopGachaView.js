@@ -1,7 +1,7 @@
 import { el, formatDateTime } from '../render.js';
 import { genId } from '../id.js';
 import {
-  remainingStock as remainingPrizeStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws, redistributeProbability,
+  remainingStock as remainingPrizeStock, eligiblePrizes, weightedRandomPick, splitPointsAcrossDraws, redistributeProbability, resolveVariantName,
 } from '../gacha.js';
 import { usersWithActivity } from '../points.js';
 import { getActiveEventId } from '../storage.js';
@@ -209,11 +209,13 @@ function renderShopSection({
         }
       }
       if (!(await showConfirm(`「${item.name}」と交換しますか？`))) return;
+      const resolvedName = resolveVariantName(item);
       log.push({
-        id: genId('shoplog'), timestamp: new Date().toISOString(), userId, itemId: item.id, itemName: item.name, pointsSpent: item.requiredPoints,
+        id: genId('shoplog'), timestamp: new Date().toISOString(), userId, itemId: item.id, itemName: resolvedName, pointsSpent: item.requiredPoints,
       });
       save();
       rerender();
+      if (item.variants?.length) await showAlert(`🎁 ${resolvedName} に決定しました`);
     },
   }, `${item.name}${item.requiredPoints != null ? `(${item.requiredPoints}pt)` : ''}`));
 
@@ -227,7 +229,7 @@ function renderShopSection({
   const itemRows = items.map((item) => {
     const stock = remainingShopStock(item, log);
     return el('div', { class: 'card list-row' }, [
-      el('span', { class: 'list-row-name' }, `${item.name}${item.requiredPoints != null ? ` (${item.requiredPoints}pt)` : ''} - ${stockLabel(stock)}${item.allowDuplicate ? '' : ' / 被り不可'}`),
+      el('span', { class: 'list-row-name' }, `${item.name}${item.requiredPoints != null ? ` (${item.requiredPoints}pt)` : ''} - ${stockLabel(stock)}${item.allowDuplicate ? '' : ' / 被り不可'}${item.variants?.length ? ` / バリアント: ${item.variants.join('、')}` : ''}`),
       el('button', {
         type: 'button',
         class: 'btn-icon',
@@ -321,10 +323,11 @@ function renderGachaSection({
         const eligible = eligiblePrizes(gacha.prizes, log, userId);
         if (eligible.length === 0) break;
         const chosen = weightedRandomPick(eligible);
+        const resolvedName = resolveVariantName(chosen);
         log.push({
-          id: genId('gachalog'), timestamp: new Date().toISOString(), userId, prizeId: chosen.id, prizeName: chosen.name, mode: 'random', pointsSpent: costs[i],
+          id: genId('gachalog'), timestamp: new Date().toISOString(), userId, prizeId: chosen.id, prizeName: resolvedName, mode: 'random', pointsSpent: costs[i],
         });
-        results.push(chosen.name);
+        results.push(resolvedName);
       }
       save();
       rerender();
@@ -353,12 +356,13 @@ function renderGachaSection({
       const eligible = eligiblePrizes(gacha.prizes, log, userId);
       if (eligible.length === 0) { await showAlert('引ける景品がありません'); return; }
       const chosen = weightedRandomPick(eligible);
+      const resolvedName = resolveVariantName(chosen);
       log.push({
-        id: genId('gachalog'), timestamp: new Date().toISOString(), userId, prizeId: chosen.id, prizeName: chosen.name, mode: 'free', pointsSpent: 0,
+        id: genId('gachalog'), timestamp: new Date().toISOString(), userId, prizeId: chosen.id, prizeName: resolvedName, mode: 'free', pointsSpent: 0,
       });
       save();
       rerender();
-      await showAlert(`🎁 無料ガチャ結果: ${chosen.name}`);
+      await showAlert(`🎁 無料ガチャ結果: ${resolvedName}`);
     },
   }, '無料で引く');
   const freeDrawArea = el('div', {}, [
@@ -380,11 +384,13 @@ function renderGachaSection({
         return;
       }
       if (!(await showConfirm(`${prize.guaranteedPoints}ptを消費して「${prize.name}」を確定で獲得しますか？`))) return;
+      const resolvedName = resolveVariantName(prize);
       log.push({
-        id: genId('gachalog'), timestamp: new Date().toISOString(), userId, prizeId: prize.id, prizeName: prize.name, mode: 'guaranteed', pointsSpent: prize.guaranteedPoints,
+        id: genId('gachalog'), timestamp: new Date().toISOString(), userId, prizeId: prize.id, prizeName: resolvedName, mode: 'guaranteed', pointsSpent: prize.guaranteedPoints,
       });
       save();
       rerender();
+      if (prize.variants?.length) await showAlert(`🎯 ${resolvedName} に決定しました`);
     },
   }, `${prize.name}(${prize.guaranteedPoints}pt)`));
   const guaranteedArea = !userId
@@ -430,7 +436,7 @@ function renderGachaSection({
   const prizeRows = gacha.prizes.map((prize) => {
     const stock = remainingPrizeStock(prize, log);
     return el('div', { class: 'card list-row' }, [
-      el('span', { class: 'list-row-name' }, `${prize.name}(${probabilityOf(prize)}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}`),
+      el('span', { class: 'list-row-name' }, `${prize.name}(${probabilityOf(prize)}%) - ${stockLabel(stock)}${prize.allowDuplicate ? '' : ' / 被り不可'}${prize.guaranteedPoints != null ? ` / 確定枠${prize.guaranteedPoints}pt` : ''}${prize.variants?.length ? ` / バリアント: ${prize.variants.join('、')}` : ''}`),
       el('button', {
         type: 'button',
         class: 'btn-icon',
@@ -483,7 +489,9 @@ function renderGachaSection({
       openPrizeModal({
         prizes: gacha.prizes,
         prize: null,
-        initialValues: { name: source.name, stock: source.stock, allowDuplicate: source.allowDuplicate },
+        initialValues: {
+          name: source.name, stock: source.stock, allowDuplicate: source.allowDuplicate, variants: source.variants,
+        },
         save,
         onSaved: rerender,
       });

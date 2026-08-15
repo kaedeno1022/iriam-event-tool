@@ -103,6 +103,36 @@ describe('openStockItemModal', () => {
     expect(item.name).toBe('新名称');
   });
 
+  it('バリアントを読点/カンマ区切りで入力すると、trimして空要素を除いた配列で保存される', () => {
+    const items = [];
+    openStockItemModal({
+      items, item: null, kind: '特典', save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    setInputValue('#stockitem-name', 'ランダムグッズ');
+    setInputValue('#stockitem-variants', ' X、Y,Z ,,');
+    clickButtonByText('追加する');
+
+    expect(items[0].variants).toEqual(['X', 'Y', 'Z']);
+  });
+
+  it('編集モードでは既存のvariantsが読点区切りで初期表示され、保存すると更新される', () => {
+    const item = {
+      id: 'i1', name: '旧名称', requiredPoints: 100, stock: 2, allowDuplicate: false, variants: ['A', 'B'],
+    };
+    const items = [item];
+    openStockItemModal({
+      items, item, kind: '特典', save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    expect(document.querySelector('#stockitem-variants').value).toBe('A、B');
+
+    setInputValue('#stockitem-variants', 'X、Y');
+    clickButtonByText('保存する');
+
+    expect(item.variants).toEqual(['X', 'Y']);
+  });
+
   it('キャンセルすると何も保存されずモーダルが閉じる', () => {
     const items = [];
     const save = vi.fn();

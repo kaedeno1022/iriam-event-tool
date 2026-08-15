@@ -28,6 +28,15 @@ export function splitPointsAcrossDraws(totalPoints, draws) {
   return Array.from({ length: draws }, (_, i) => base + (i < remainder ? 1 : 0));
 }
 
+// 当選/交換が確定した景品・特典の表示名を確定する。variants(例: チェキの絵柄違い)が
+// 設定されていれば、そこからさらに均等ランダムで1つ選び「name - variant」の形にする。
+// variants未設定/空なら従来通りnameをそのまま返す(バリアント無しの景品は影響を受けない)。
+export function resolveVariantName(entry) {
+  if (!entry.variants || entry.variants.length === 0) return entry.name;
+  const variant = entry.variants[Math.floor(Math.random() * entry.variants.length)];
+  return `${entry.name} - ${variant}`;
+}
+
 // 確率(probability, %)に応じたランダム抽選。候補が空ならnullを返す。確率が全て0以下の場合は均等抽選として扱う。
 export function weightedRandomPick(prizes) {
   if (prizes.length === 0) return null;

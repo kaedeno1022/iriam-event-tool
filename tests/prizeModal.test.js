@@ -189,6 +189,48 @@ describe('openPrizeModal', () => {
     expect(document.querySelector('#prize-allow-duplicate').checked).toBe(true);
   });
 
+  it('バリアントを読点/カンマ区切りで入力すると、trimして空要素を除いた配列で保存される', () => {
+    const prizes = [];
+    openPrizeModal({
+      prizes, prize: null, save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    setInputValue('#prize-name', 'ランダムチェキ');
+    setInputValue('#prize-variants', ' A、B,C ,,');
+    clickButtonByText('追加する');
+
+    expect(prizes[0].variants).toEqual(['A', 'B', 'C']);
+  });
+
+  it('バリアント欄が空欄なら空配列で保存される', () => {
+    const prizes = [];
+    openPrizeModal({
+      prizes, prize: null, save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    setInputValue('#prize-name', '通常景品');
+    clickButtonByText('追加する');
+
+    expect(prizes[0].variants).toEqual([]);
+  });
+
+  it('編集モードでは既存のvariantsが読点区切りで初期表示され、保存すると更新される', () => {
+    const prize = {
+      id: 'p1', name: '既存景品', probability: 100, stock: null, allowDuplicate: false, guaranteedPoints: null, variants: ['A', 'B'],
+    };
+    const prizes = [prize];
+    openPrizeModal({
+      prizes, prize, save: vi.fn(), onSaved: vi.fn(),
+    });
+
+    expect(document.querySelector('#prize-variants').value).toBe('A、B');
+
+    setInputValue('#prize-variants', 'X、Y、Z');
+    clickButtonByText('保存する');
+
+    expect(prize.variants).toEqual(['X', 'Y', 'Z']);
+  });
+
   it('キャンセルすると何も保存されずモーダルが閉じる', () => {
     const prizes = [];
     const save = vi.fn();

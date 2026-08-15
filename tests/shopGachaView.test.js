@@ -156,6 +156,23 @@ describe('renderShopGacha', () => {
       expect(state.segments[0].config.shopLog[0]).toMatchObject({ userId: 'u1', itemId: 'item1', pointsSpent: 200 });
     });
 
+    it('特典にvariantsがあれば交換確定時にランダムで1つ選ばれitemNameに合成され、決定alertが表示される', async () => {
+      state.segments[0].config.shopItems[0].variants = ['赤', '青'];
+      state.giftLogs.push({
+        id: 'g1', segmentId: 'seg-maid', userId: 'u1', points: 500, qty: 1, timestamp: new Date().toISOString(),
+      });
+      rerender();
+      await clickByText(container, 'button', 'お買い物');
+      selectUser(container, 'u1');
+
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.6); // Math.floor(0.6*2)=1 -> 青
+      await clickByText(container, 'button', 'オムライスらくがき(200pt)');
+      randomSpy.mockRestore();
+
+      expect(state.segments[0].config.shopLog[0].itemName).toBe('オムライスらくがき - 青');
+      expect(showAlert).toHaveBeenCalledWith('🎁 オムライスらくがき - 青 に決定しました');
+    });
+
     it('被り不可の特典は交換済みユーザーには再表示されない', async () => {
       state.segments[0].config.shopLog.push({
         id: 'l1', userId: 'u1', itemId: 'item1', itemName: 'オムライスらくがき', pointsSpent: 200, timestamp: new Date().toISOString(),
@@ -205,6 +222,15 @@ describe('renderShopGacha', () => {
         const item = state.segments[0].config.shopItems.find((i) => i.id === 'item1');
         expect(item.requiredPoints).toBe(300);
       });
+
+      it('variants設定済みの特典は一覧行にバリアントが表示される', async () => {
+        state.segments[0].config.shopItems[0].variants = ['赤', '青'];
+        rerender();
+        await clickByText(container, 'button', 'お買い物');
+        await clickByText(container, 'button', '▼ 特典一覧を編集');
+        const row = [...container.querySelectorAll('.list-row')].find((r) => r.textContent.includes('オムライスらくがき'));
+        expect(row.textContent).toContain('バリアント: 赤、青');
+      });
     });
   });
 
@@ -222,6 +248,15 @@ describe('renderShopGacha', () => {
       expect(container.textContent).not.toContain('抽選(ランダム)');
     });
 
+    it('variants設定済みの景品は一覧行にバリアントが表示される', async () => {
+      state.segments[0].config.gacha.prizes[0].variants = ['A', 'B', 'C'];
+      rerender();
+      await clickByText(container, 'button', 'ガチャ');
+      await clickByText(container, 'button', '▼ 景品一覧を編集');
+      const row = [...container.querySelectorAll('.list-row')].find((r) => r.textContent.includes('ヘッダー'));
+      expect(row.textContent).toContain('バリアント: A、B、C');
+    });
+
     it('pt十分ならレートボタンで抽選でき、gachaLogにmode:randomで記録されptが消費される', async () => {
       state.giftLogs.push({
         id: 'g1', segmentId: 'seg-maid', userId: 'u1', points: 300, qty: 1, timestamp: new Date().toISOString(),
@@ -234,6 +269,23 @@ describe('renderShopGacha', () => {
       expect(state.segments[0].config.gachaLog[0]).toMatchObject({
         userId: 'u1', prizeName: 'ヘッダー', mode: 'random', pointsSpent: 300,
       });
+    });
+
+    it('レート抽選でもvariantsがあればランダムで1つ選ばれprizeNameに合成される', async () => {
+      state.segments[0].config.gacha.prizes[0].variants = ['A', 'B', 'C'];
+      state.giftLogs.push({
+        id: 'g1', segmentId: 'seg-maid', userId: 'u1', points: 300, qty: 1, timestamp: new Date().toISOString(),
+      });
+      rerender();
+      await clickByText(container, 'button', 'ガチャ');
+      selectUser(container, 'u1');
+
+      // 1回目(weightedRandomPickの景品選択)→prizes[0]、2回目(resolveVariantNameのバリアント選択)→C
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.999);
+      await clickByText(container, 'button', '300ptで1回分');
+      randomSpy.mockRestore();
+
+      expect(state.segments[0].config.gachaLog[0].prizeName).toBe('ヘッダー - C');
     });
 
     it('pt不足ならレートボタンを押してもalertでブロックされ抽選されない', async () => {
@@ -254,6 +306,25 @@ describe('renderShopGacha', () => {
       await clickByText(container, 'button', 'ヘッダー(1000pt)');
       expect(state.segments[0].config.gachaLog).toHaveLength(1);
       expect(state.segments[0].config.gachaLog[0]).toMatchObject({ mode: 'guaranteed', pointsSpent: 1000 });
+      expect(showAlert).not.toHaveBeenCalled(); // variants未設定なら結果alertは出ない(従来通り)
+    });
+
+    it('確定枠でもvariantsがあればランダムで1つ選ばれprizeNameに合成され、結果alertが表示される', async () => {
+      state.segments[0].config.gacha.prizes[0].guaranteedPoints = 1000;
+      state.segments[0].config.gacha.prizes[0].variants = ['A', 'B'];
+      state.giftLogs.push({
+        id: 'g1', segmentId: 'seg-maid', userId: 'u1', points: 1000, qty: 1, timestamp: new Date().toISOString(),
+      });
+      rerender();
+      await clickByText(container, 'button', 'ガチャ');
+      selectUser(container, 'u1');
+
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.6); // Math.floor(0.6*2)=1 -> B
+      await clickByText(container, 'button', 'ヘッダー(1000pt)');
+      randomSpy.mockRestore();
+
+      expect(state.segments[0].config.gachaLog[0].prizeName).toBe('ヘッダー - B');
+      expect(showAlert).toHaveBeenCalledWith('🎯 ヘッダー - B に決定しました');
     });
 
     it('無料ガチャは付与前は残り0回で押せない', () => {
@@ -278,6 +349,24 @@ describe('renderShopGacha', () => {
       expect(state.segments[0].config.gachaLog).toHaveLength(1);
       expect(state.segments[0].config.gachaLog[0]).toMatchObject({ userId: 'u1', mode: 'free', pointsSpent: 0 });
       expect(container.textContent).toContain('残り1回');
+    });
+
+    it('無料ガチャでもvariantsがあればprizeNameに合成され、結果alertにバリアント名が表示される', async () => {
+      state.segments[0].config.gacha.prizes[0].variants = ['A', 'B'];
+      state.segments[0].config.freeDrawGrants.push({
+        id: 'grant1', userId: 'u1', count: 1, timestamp: new Date().toISOString(),
+      });
+      rerender();
+      await clickByText(container, 'button', 'ガチャ');
+      selectUser(container, 'u1');
+
+      const randomSpy = vi.spyOn(Math, 'random').mockReturnValueOnce(0).mockReturnValueOnce(0.6); // 景品選択→prizes[0]、バリアント選択→B
+      findByText(container, 'button', '無料で引く').click();
+      await flush();
+      randomSpy.mockRestore();
+
+      expect(state.segments[0].config.gachaLog[0].prizeName).toBe('ヘッダー - B');
+      expect(showAlert).toHaveBeenCalledWith('🎁 無料ガチャ結果: ヘッダー - B');
     });
 
     it('無料枠での抽選はptを消費しない(pointsSpent: 0)', async () => {
@@ -393,6 +482,19 @@ describe('renderShopGacha', () => {
         expect(document.querySelector('#prize-name').value).toBe('コピー元特典');
         expect(document.querySelector('#prize-stock').value).toBe('5');
         expect(document.querySelector('#prize-allow-duplicate').checked).toBe(true);
+      });
+
+      it('コピー元特典にvariantsがあれば、それも初期値として反映される', async () => {
+        state.segments[0].config.shopItems.push({
+          id: 'item1', name: 'コピー元特典', requiredPoints: 200, stock: 5, allowDuplicate: true, variants: ['赤', '青'],
+        });
+        rerender();
+        await clickByText(container, 'button', 'ガチャ');
+        await clickByText(container, 'button', '▼ 景品一覧を編集');
+        showSelect.mockResolvedValueOnce('item1');
+        await clickByText(container, 'button', '＋ お買い物からコピー');
+
+        expect(document.querySelector('#prize-variants').value).toBe('赤、青');
       });
     });
 

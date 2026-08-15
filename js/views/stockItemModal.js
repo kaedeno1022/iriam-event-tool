@@ -29,6 +29,9 @@ export function openStockItemModal({
       type: 'number', id: 'stockitem-stock', min: '0', value: item?.stock != null ? String(item.stock) : '',
     });
     const allowDuplicateInput = el('input', { type: 'checkbox', id: 'stockitem-allow-duplicate', checked: item?.allowDuplicate ?? false });
+    const variantsInput = el('input', {
+      type: 'text', id: 'stockitem-variants', value: (item?.variants ?? []).join('、'), placeholder: '例: A、B、C',
+    });
 
     const saveBtn = el('button', {
       type: 'button',
@@ -43,14 +46,17 @@ export function openStockItemModal({
         const stockRaw = stockInput.value.trim();
         const stock = stockRaw === '' ? null : Number(stockRaw);
 
+        const variants = variantsInput.value.split(/[、,]/).map((v) => v.trim()).filter(Boolean);
+
         if (isEdit) {
           item.name = name;
           item.requiredPoints = requiredPoints;
           item.stock = stock;
           item.allowDuplicate = allowDuplicateInput.checked;
+          item.variants = variants;
         } else {
           items.push({
-            id: genId('shopitem'), name, requiredPoints, stock, allowDuplicate: allowDuplicateInput.checked,
+            id: genId('shopitem'), name, requiredPoints, stock, allowDuplicate: allowDuplicateInput.checked, variants,
           });
         }
         save();
@@ -70,6 +76,11 @@ export function openStockItemModal({
       el('div', { class: 'form-row' }, [el('label', {}, '必要ポイント(空欄で不明)'), pointsInput]),
       el('div', { class: 'form-row' }, [el('label', {}, '在庫数(空欄で無制限)'), stockInput]),
       el('label', { class: 'checkbox-row' }, [allowDuplicateInput, '被りを許可する(複数回獲得できる)']),
+      el('div', { class: 'form-row' }, [
+        el('label', {}, 'バリアント(読点区切り、空欄ならバリアント無し)'),
+        variantsInput,
+        el('p', { class: 'empty-hint' }, '例: ランダムチェキのように交換後さらに絵柄違い等をランダムで1つ決めたい場合に使う。交換確定時にここから均等ランダムで1つ選ばれる。'),
+      ]),
       el('div', { class: 'modal-actions' }, [cancelBtn, saveBtn]),
     ]);
 
